@@ -551,7 +551,7 @@ function Leaf({size=13,filled,accent="#6C5CE7"}){
 const ML=({children,style})=><div style={{fontSize:9,letterSpacing:2.5,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:10,...style}}>{children}</div>;
 const Input=({value,onChange,placeholder,style,type="text",rows,accept,onFileChange})=>{const base={width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",fontFamily:"'Syne','Helvetica Neue',sans-serif",transition:"border 0.3s",...style};if(rows)return <textarea rows={rows} value={value} onChange={onChange} placeholder={placeholder} style={{...base,resize:"none"}}/>;return <input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base} accept={accept}/>};
 const Btn=({children,onClick,accent,accentGrad,disabled,secondary,small,style})=><button onClick={onClick} disabled={disabled} style={{width:"100%",padding:small?"10px 0":secondary?"12px 0":"16px 0",borderRadius:14,border:secondary?"1.5px solid rgba(255,255,255,0.1)":"none",background:secondary?"transparent":disabled?"rgba(255,255,255,0.06)":(accentGrad||accent||"#6C5CE7"),color:secondary?"rgba(255,255,255,0.5)":disabled?"rgba(255,255,255,0.3)":"#000",fontSize:small?9:11,letterSpacing:3,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",cursor:disabled?"not-allowed":"pointer",WebkitTapHighlightColor:"transparent",...style}}>{children}</button>;
-function NavItem({icon,label,active,onClick,accent,accentGrad}){return <button onClick={onClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative",WebkitTapHighlightColor:"transparent"}}><div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>{active&&<div style={{position:"absolute",width:32,height:32,borderRadius:"50%",background:`${accent}18`}}/>}<span style={{fontSize:22,position:"relative",opacity:active?1:0.3}}>{icon}</span></div><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:active?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:active?600:400}}>{label}</span>{active&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accentGrad||accent}}/>}</button>}
+function NavItem({icon,label,active,onClick,accent,accentGrad}){return <button onClick={onClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative",WebkitTapHighlightColor:"transparent"}}><span style={{fontSize:22,color:active?accent:"rgba(255,255,255,0.3)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.3)"}}>{icon}</span><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:active?accent:"rgba(255,255,255,0.25)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:active?600:400}}>{label}</span>{active&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accentGrad||accent}}/>}</button>}
 
 // ─── Flame Icon ────────────────────────────────────────
 function FlameIcon({size=28,accent="#6C5CE7",pulse=false}){return <svg viewBox="0 0 120 120" width={size} height={size}><defs><linearGradient id="fgO" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.95"/><stop offset="50%" stopColor={accent}/><stop offset="100%" stopColor="white" stopOpacity="0.7"/></linearGradient><linearGradient id="fgI" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.6"/><stop offset="100%" stopColor="white" stopOpacity="0.9"/></linearGradient></defs><path d="M60 8 C54 20,38 35,28 55 C18 75,20 95,35 105 C45 112,55 115,60 115 C65 115,75 112,85 105 C100 95,102 75,92 55 C82 35,66 20,60 8Z" fill="url(#fgO)" opacity="0.95"/><path d="M55 38 C50 50,40 62,38 78 C36 90,42 102,52 106 C58 108,64 106,68 100 C74 90,70 78,64 65 C60 55,57 45,55 38Z" fill="url(#fgI)" opacity="0.85"/><ellipse cx="54" cy="88" rx="6" ry="12" fill="white" opacity="0.5"/></svg>}
@@ -947,7 +947,7 @@ function PuffcoCompanion() {
           </div>
         </header>
 
-        <div ref={scrollRef} style={{flex:1,paddingBottom:160}}>
+        <div ref={scrollRef} style={{flex:1}}>
 
           {/* ─── STASH TAB ─── */}
           {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} />}
@@ -963,11 +963,11 @@ function PuffcoCompanion() {
 
           {/* ─── STRAIN ENCYCLOPEDIA (#11) ─── */}
           {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} />}
-        </div>
-      </div>
 
-      {/* Bottom Nav */}
-      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:440,padding:"10px 18px 18px",zIndex:50}}>
+        </div>
+
+        {/* Bottom Nav — flows with content, always at the bottom */}
+        <div style={{padding:"10px 0 18px"}}>
           <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",background:"rgba(8,8,20,0.95)",borderRadius:18,padding:"6px 0",border:"1px solid rgba(255,255,255,0.05)"}}>
             <NavItem icon="◈" label="Stash" active={tab==="stash"} onClick={()=>switchTab("stash")} accent={accent} accentGrad={accentGrad} />
             <NavItem icon="◷" label="Stats" active={tab==="stats"} onClick={()=>switchTab("stats")} accent={accent} accentGrad={accentGrad} />
@@ -983,13 +983,14 @@ function PuffcoCompanion() {
                     <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
                   </div>
                 </div>
-                <span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:tab==="profile"?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:tab==="profile"?600:400}}>Profile</span>
+                <span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:tab==="profile"?accent:"rgba(255,255,255,0.25)",WebkitTextFillColor:tab==="profile"?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:tab==="profile"?600:400}}>Profile</span>
                 {tab==="profile"&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accent}}/>}
               </button>
             ) : (
               <NavItem icon="◉" label="Profile" active={tab==="profile"} onClick={()=>switchTab("profile")} accent={accent} accentGrad={accentGrad} />
             )}
           </div>
+        </div>
       </div>
 
       {/* Session Detail Modal */}
