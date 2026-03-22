@@ -62,6 +62,34 @@ function getZone(f) { return HEAT_ZONES.find(z => f >= z.min && f <= z.max) || H
 
 const EXTRACT_TYPES = ["Resin","Live Resin","Rosin","Live Rosin","Hash Rosin","Live Hash Rosin","Rosin Budder","Live Rosin Budder","Hash Rosin Budder","Live Hash Rosin Budder","Shatter","BHO","Dry Sift","Ice Hash","Bubble Hash","Temple Hash","Diamonds","Diamonds And Sugar","Honeycomb","Wax","Budder","Crumble","Sauce","Distillate"];
 const TEMP_SUGGESTIONS = {"Live Rosin":510,"Hash Rosin":510,"Rosin":510,"Bubble Hash":490,"Ice Hash":490,"Dry Sift":490,"Live Resin":510,"BHO":530,"Shatter":530,"Diamonds":530};
+
+// ═══════════════════════════════════════════════════════
+// HAPTIC CHOREOGRAPHY
+// ═══════════════════════════════════════════════════════
+const haptic = {
+  light: () => navigator.vibrate?.(10),
+  tap: () => navigator.vibrate?.(18),
+  medium: () => navigator.vibrate?.(30),
+  success: () => navigator.vibrate?.([15,50,15,50,30]),
+  double: () => navigator.vibrate?.([20,40,20]),
+  session_start: () => navigator.vibrate?.([80,60,80,60,120]),
+  session_end: () => navigator.vibrate?.([30,30,30,30,60,60,100]),
+  achievement: () => navigator.vibrate?.([50,30,50,30,50,30,100,50,200]),
+  heating: () => navigator.vibrate?.([100,80,150,80,250]),
+  reheat: () => navigator.vibrate?.([60,40,60]),
+  error: () => navigator.vibrate?.([100,50,100]),
+  nav: () => navigator.vibrate?.(8),
+};
+
+// Default custom rating dimensions
+const DEFAULT_CUSTOM_RATINGS = [
+  {id:"smoothness",label:"Smoothness",enabled:false},
+  {id:"onset",label:"Onset Speed",enabled:false},
+  {id:"duration",label:"Duration",enabled:false},
+  {id:"throat",label:"Throat Hit",enabled:false},
+  {id:"terps",label:"Terp Expression",enabled:false},
+  {id:"melt",label:"Melt Quality",enabled:false},
+];
 const EFFECTS_LIST = [
   {id:"relaxed",emoji:"😌",label:"Relaxed"},{id:"creative",emoji:"🎨",label:"Creative"},{id:"focused",emoji:"🎯",label:"Focused"},
   {id:"euphoric",emoji:"✨",label:"Euphoric"},{id:"sleepy",emoji:"😴",label:"Sleepy"},{id:"hungry",emoji:"🍕",label:"Hungry"},
@@ -80,7 +108,7 @@ const ACHIEVEMENTS = [
   {id:"five_hundo",emoji:"🏅",title:"Five Hundo",desc:"Log 500 sessions",check:s=>s.length>=500},
   {id:"thousand",emoji:"👑",title:"The Thousand",desc:"Log 1,000 sessions",check:s=>s.length>=1000},
   {id:"all_temps",emoji:"🌡️",title:"Temp Explorer",desc:"Use all 4 heat zones",check:s=>new Set(s.map(x=>getZone(x.finalTempF||500).name)).size>=4},
-  {id:"five_star",emoji:"⭐",title:"High Standards",desc:"Rate a session 5 stars",check:s=>s.some(x=>x.rating===5)},
+  {id:"five_star",icon:"star",title:"High Standards",desc:"Rate a session 5 stars",check:s=>s.some(x=>x.rating===5)},
   {id:"rosin_fan",emoji:"🧇",title:"Rosin Head",desc:"Log 10 rosin sessions",check:s=>s.filter(x=>x.type?.toLowerCase().includes("rosin")).length>=10},
   {id:"five_brands",emoji:"🏷️",title:"Brand Hopper",desc:"Try 5 different brands",check:s=>new Set(s.map(x=>x.brand).filter(Boolean)).size>=5},
   {id:"effects_log",emoji:"📓",title:"Effect Tracker",desc:"Log effects on a session",check:s=>s.some(x=>x.effects?.length>0)},
@@ -538,26 +566,80 @@ function Starfield() { return null; }
 
 // ─── Reusable Components ───────────────────────────────
 function Glass({children,style,onClick,glow,noPad}){return <div onClick={onClick} className="glass-panel" style={{background:"rgba(12,12,24,0.85)",border:`1px solid ${glow?glow+"30":"rgba(255,255,255,0.07)"}`,borderRadius:18,padding:noPad?0:20,boxShadow:glow?`0 2px 20px ${glow}10,inset 0 1px 0 rgba(255,255,255,0.06)`:"inset 0 1px 0 rgba(255,255,255,0.04)",cursor:onClick?"pointer":"default",WebkitTapHighlightColor:"transparent",...style}}>{children}</div>}
+
 function Leaf({size=13,filled,accent="#6C5CE7"}){
   if(!filled) return <span style={{fontSize:size,display:"inline-block",opacity:0.15,userSelect:"none"}}>🍁</span>;
-  // Convert accent hex to approximate hue-rotate degree
   const r=parseInt(accent.slice(1,3),16), g=parseInt(accent.slice(3,5),16), b=parseInt(accent.slice(5,7),16);
   const max=Math.max(r,g,b), min=Math.min(r,g,b);
   let h=0; if(max!==min){const d=max-min; if(max===r)h=((g-b)/d+(g<b?6:0))*60; else if(max===g)h=((b-r)/d+2)*60; else h=((r-g)/d+4)*60;}
-  // Emoji default hue is ~30deg (orange/red), so offset from that
   const rot = h - 30;
   return <span style={{fontSize:size,display:"inline-block",userSelect:"none",filter:`hue-rotate(${rot}deg) drop-shadow(0 0 3px ${accent})`}}>🍁</span>;
 }
 const ML=({children,style})=><div style={{fontSize:9,letterSpacing:2.5,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:10,...style}}>{children}</div>;
 const Input=({value,onChange,placeholder,style,type="text",rows,accept,onFileChange})=>{const base={width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",fontFamily:"'Syne','Helvetica Neue',sans-serif",transition:"border 0.3s",...style};if(rows)return <textarea rows={rows} value={value} onChange={onChange} placeholder={placeholder} style={{...base,resize:"none"}}/>;return <input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base} accept={accept}/>};
 const Btn=({children,onClick,accent,accentGrad,disabled,secondary,small,style})=><button onClick={onClick} disabled={disabled} style={{width:"100%",padding:small?"10px 0":secondary?"12px 0":"16px 0",borderRadius:14,border:secondary?"1.5px solid rgba(255,255,255,0.1)":"none",background:secondary?"transparent":disabled?"rgba(255,255,255,0.06)":(accentGrad||accent||"#6C5CE7"),color:secondary?"rgba(255,255,255,0.5)":disabled?"rgba(255,255,255,0.3)":"#000",fontSize:small?9:11,letterSpacing:3,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",cursor:disabled?"not-allowed":"pointer",WebkitTapHighlightColor:"transparent",...style}}>{children}</button>;
-function NavItem({icon,label,active,onClick,accent,accentGrad}){return <button onClick={onClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative",WebkitTapHighlightColor:"transparent"}}><span style={{fontSize:22,color:active?accent:"rgba(255,255,255,0.3)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.3)"}}>{icon}</span><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:active?accent:"rgba(255,255,255,0.25)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:active?600:400}}>{label}</span>{active&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accentGrad||accent}}/>}</button>}
+
+function AchievementBadge({ achievement, earned, accent, size = "normal" }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const ref = useRef(null);
+  const s = size === "small" ? 32 : 38;
+  const fs = size === "small" ? 16 : 18;
+
+  useEffect(() => {
+    if (!showInfo) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setShowInfo(false); };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [showInfo]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <div
+        onClick={() => { if (!earned) setShowInfo(true); }}
+        style={{
+          width: s, height: s, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+          background: earned ? `${accent}15` : "rgba(255,255,255,0.02)",
+          border: `1px solid ${earned ? accent + "40" : "rgba(255,255,255,0.05)"}`,
+          fontSize: fs, opacity: earned ? 1 : 0.3, cursor: earned ? "default" : "pointer",
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        {achievement.secret&&!earned?"❓":achievement.emoji}
+      </div>
+      {showInfo && !earned && (
+        <div style={{
+          position: "absolute", bottom: s + 6, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(12,12,28,0.97)", border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 12, padding: "10px 14px", minWidth: 160, zIndex: 20,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{achievement.title}</div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>{achievement.desc}</div>
+          <div style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 8, height: 8, background: "rgba(12,12,28,0.97)", border: "1px solid rgba(255,255,255,0.12)", borderTop: "none", borderLeft: "none" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+function NavItem({icon,label,active,onClick,accent,accentGrad}){return <button onClick={onClick} aria-label={label} role="tab" aria-selected={active} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative",WebkitTapHighlightColor:"transparent"}}><span style={{fontSize:22,color:active?accent:"rgba(255,255,255,0.3)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.3)"}}>{icon}</span><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:active?accent:"rgba(255,255,255,0.25)",WebkitTextFillColor:active?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:active?600:400}}>{label}</span>{active&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accentGrad||accent}}/>}</button>}
 
 // ─── Flame Icon ────────────────────────────────────────
-function FlameIcon({size=28,accent="#6C5CE7",pulse=false}){return <svg viewBox="0 0 120 120" width={size} height={size}><defs><linearGradient id="fgO" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.95"/><stop offset="50%" stopColor={accent}/><stop offset="100%" stopColor="white" stopOpacity="0.7"/></linearGradient><linearGradient id="fgI" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.6"/><stop offset="100%" stopColor="white" stopOpacity="0.9"/></linearGradient></defs><path d="M60 8 C54 20,38 35,28 55 C18 75,20 95,35 105 C45 112,55 115,60 115 C65 115,75 112,85 105 C100 95,102 75,92 55 C82 35,66 20,60 8Z" fill="url(#fgO)" opacity="0.95"/><path d="M55 38 C50 50,40 62,38 78 C36 90,42 102,52 106 C58 108,64 106,68 100 C74 90,70 78,64 65 C60 55,57 45,55 38Z" fill="url(#fgI)" opacity="0.85"/><ellipse cx="54" cy="88" rx="6" ry="12" fill="white" opacity="0.5"/></svg>}
+function FlameIcon({size=28,accent="#6C5CE7"}){
+  return <svg viewBox="0 0 60 84" width={size} height={size*1.4}>
+    {/* Main body — split tip, wide rounded base */}
+    <path d="M25 4 C22 16,14 30,8 44 C4 56,8 68,20 76 C24 80,30 82,30 82 C30 82,36 80,40 76 C52 68,56 56,52 44 C46 30,38 16,35 4 C33 12,31 20,30 24 C29 20,27 12,25 4Z" fill={accent} opacity="0.9"/>
+    {/* Inner flame */}
+    <path d="M30 28 L25 42 C22 54,25 66,30 72 C35 66,38 54,35 42 Z" fill="white" opacity="0.5"/>
+    {/* Hot core */}
+    <ellipse cx="30" cy="58" rx="3" ry="6" fill="white" opacity="0.65"/>
+    {/* Wisps */}
+    <path d="M15 10 C11 4,9 12,13 16" fill="none" stroke={accent} strokeWidth="1.5" opacity="0.35" strokeLinecap="round"/>
+    <path d="M47 8 C51 2,53 10,49 14" fill="none" stroke={accent} strokeWidth="1.5" opacity="0.35" strokeLinecap="round"/>
+  </svg>;
+}
 
 // ─── Photo Compressor ──────────────────────────────────
-function compressPhoto(file, maxSize=512) {
+function compressPhoto(file, maxSize=400) {
   return new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = ev => {
@@ -567,13 +649,24 @@ function compressPhoto(file, maxSize=512) {
         let w=img.width, h=img.height;
         if(w>h){if(w>maxSize){h=Math.round(h*maxSize/w);w=maxSize}}else{if(h>maxSize){w=Math.round(w*maxSize/h);h=maxSize}}
         canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(img,0,0,w,h);
-        resolve(canvas.toDataURL("image/jpeg",0.75));
+        resolve(canvas.toDataURL("image/jpeg",0.6));
       };
       img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
   });
 }
+function getStorageUsage() {
+  try {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("puffco")) total += (localStorage.getItem(key)||"").length;
+    }
+    return total;
+  } catch { return 0; }
+}
+const STORAGE_WARN_BYTES = 3500000; // warn at ~3.5MB (localStorage limit is usually 5-10MB)
 
 // ═══════════════════════════════════════════════════════
 // MAIN APP
@@ -585,6 +678,7 @@ function PuffcoCompanion() {
 
   const [tab, setTabRaw] = useState("stash");
   const switchTab = useCallback((newTab) => {
+    haptic.nav();
     if (scrollRef.current) scrollPositions.current[tab] = scrollRef.current.scrollTop;
     setTabRaw(newTab);
     requestAnimationFrame(() => {
@@ -592,15 +686,17 @@ function PuffcoCompanion() {
     });
   }, [tab]);
   const [stash, setStash] = useState([]);
-  const [profile, setProfile] = useState({ name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none" });
+  const [profile, setProfile] = useState({ name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none", bio:"", location:"", market:"rec" });
   // Feature #18: Custom Heat Profiles
   const [heatProfiles, setHeatProfiles] = useState(DEFAULT_PROFILES);
   const [activeProfileId, setActiveProfileId] = useState(1);
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPhase, setSessionPhase] = useState("details");
   const [sessionData, setSessionData] = useState({ brand:"", strain:"", classification:"Hybrid", type:"Live Rosin", photo:"", spotifyUrl:"", isGlobbing:false, brand2:"", strain2:"", type2:"Live Rosin" });
-  const [ratingData, setRatingData] = useState({ vapor:0, taste:0, potency:0, rating:0, notes:"", effects:[], flavors:[] });
+  const [ratingData, setRatingData] = useState({ vapor:0, taste:0, potency:0, rating:0, notes:"", effects:[], flavors:[], customRatings:{} });
   const [selectedTempF, setSelectedTempF] = useState(510);
+  const [customRatingDims, setCustomRatingDims] = useState(DEFAULT_CUSTOM_RATINGS);
+  const [accessories, setAccessories] = useState([]);
   const [timeLeft, setTimeLeft] = useState(30);
   const [totalDuration, setTotalDuration] = useState(0);
   const [boosts, setBoosts] = useState(0);
@@ -620,18 +716,21 @@ function PuffcoCompanion() {
   const [editingSession, setEditingSession] = useState(null);
   const scrollRef = useRef(null);
   const scrollPositions = useRef({});
+  const [vaporTrail, setVaporTrail] = useState(false);
 
   // ─── Load all data from persistent storage on mount ───
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [savedStash, savedProfile, savedHP, savedActiveHP, savedOnboarded] = await Promise.all([
+        const [savedStash, savedProfile, savedHP, savedActiveHP, savedOnboarded, savedCR, savedAcc] = await Promise.all([
           storageGet("puffco-stash", []),
-          storageGet("puffco-profile", { name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none" }),
+          storageGet("puffco-profile", { name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none", bio:"", location:"", market:"rec" }),
           storageGet("puffco-heat-profiles", DEFAULT_PROFILES),
           storageGet("puffco-active-profile", 1),
           storageGet("puffco-onboarded", false),
+          storageGet("puffco-custom-ratings", DEFAULT_CUSTOM_RATINGS),
+          storageGet("puffco-accessories", []),
         ]);
         if (mounted) {
           setStash(savedStash);
@@ -639,6 +738,8 @@ function PuffcoCompanion() {
           setHeatProfiles(savedHP);
           setActiveProfileId(savedActiveHP);
           setOnboarded(savedOnboarded);
+          setCustomRatingDims(savedCR);
+          setAccessories(savedAcc);
         }
       } catch (err) {
         console.error("Storage load error:", err);
@@ -789,7 +890,7 @@ function PuffcoCompanion() {
   const strainMap = useMemo(() => {
     const m = {};
     stash.forEach(s => {
-      if (!s.brand || !s.strain) return;
+      if (!s.brand || !s.strain || s.brand==="Quick") return;
       const key = `${s.brand}|||${s.strain}`;
       if (!m[key]) m[key] = { brand:s.brand, strain:s.strain, sessions:[], types:new Set(), classifications:new Set() };
       m[key].sessions.push(s);
@@ -811,6 +912,43 @@ function PuffcoCompanion() {
     return { total:stash.length, avgRating:avg("rating"), avgVapor:avg("vapor"), avgTaste:avg("taste"), avgPotency:avg("potency"), brands:brands.length, strains:strains.length, favZone:favZone?favZone[0]:null, topStrain:topStrain?topStrain[0]:null, topStrainCount:topStrain?topStrain[1]:0 };
   }, [stash]);
 
+  // ─── Optimal Temp Predictor ────────────────────────────
+  const tempPredictor = useMemo(() => {
+    if (stash.length < 5) return null;
+    // Group sessions by extract type, time of day, and temp — find combos with highest avg rating
+    const combos = {};
+    stash.forEach(s => {
+      if (!s.rating || s.rating < 1 || !s.finalTempF) return;
+      const zone = getZone(s.finalTempF).name;
+      const key = `${s.type||"Unknown"}|${s.timeOfDay||"Any"}|${zone}`;
+      if (!combos[key]) combos[key] = { type:s.type, time:s.timeOfDay, zone, temps:[], ratings:[], count:0 };
+      combos[key].temps.push(s.finalTempF);
+      combos[key].ratings.push(s.rating);
+      combos[key].count++;
+    });
+    // Find best combo with at least 2 sessions
+    const ranked = Object.values(combos)
+      .filter(c => c.count >= 2)
+      .map(c => ({ ...c, avgRating: c.ratings.reduce((a,b)=>a+b,0)/c.ratings.length, avgTemp: Math.round(c.temps.reduce((a,b)=>a+b,0)/c.temps.length) }))
+      .sort((a,b) => b.avgRating - a.avgRating);
+    if (!ranked.length) return null;
+    // Also find best temp per extract type
+    const byType = {};
+    stash.forEach(s => {
+      if (!s.rating || !s.finalTempF || !s.type) return;
+      if (!byType[s.type]) byType[s.type] = { temps:[], ratings:[] };
+      byType[s.type].temps.push(s.finalTempF);
+      byType[s.type].ratings.push(s.rating);
+    });
+    const typeRecs = Object.entries(byType).map(([type, d]) => {
+      // Weight temps by rating
+      let weightedSum = 0, weightTotal = 0;
+      d.temps.forEach((t,i) => { weightedSum += t * d.ratings[i]; weightTotal += d.ratings[i]; });
+      return { type, optimalTemp: Math.round(weightedSum / weightTotal), avgRating: (d.ratings.reduce((a,b)=>a+b,0)/d.ratings.length).toFixed(1), count: d.temps.length };
+    }).filter(t => t.count >= 2).sort((a,b) => parseFloat(b.avgRating) - parseFloat(a.avgRating));
+    return { top: ranked[0], combos: ranked.slice(0,3), typeRecs: typeRecs.slice(0,4) };
+  }, [stash]);
+
   // ─── Session Timer ───────────────────────────────────
   useEffect(() => {
     if (sessionPhase !== "active" || isPaused || timeLeft <= 0) return;
@@ -822,17 +960,23 @@ function PuffcoCompanion() {
   const completeSession = () => {
     const fTemp = selectedTempF + boosts*18;
     const zone = getZone(fTemp);
-    const entry = { id:Date.now(), ...sessionData, finalTempF:fTemp, duration:totalDuration, bestTemp:zone.name, ...ratingData, date:new Date().toISOString().split("T")[0], timeOfDay:new Date().getHours()<12?"Morning":new Date().getHours()<17?"Afternoon":"Evening" };
+    // Find matching heat profile name for the base temp
+    const matchedProfile = heatProfiles.find(p => p.tempF === selectedTempF);
+    const profileName = matchedProfile ? matchedProfile.name : zone.name;
+    const entry = { id:Date.now(), ...sessionData, finalTempF:fTemp, heatProfileName:profileName, duration:totalDuration, bestTemp:zone.name, ...ratingData, date:new Date().toISOString().split("T")[0], timeOfDay:new Date().getHours()<12?"Morning":new Date().getHours()<17?"Afternoon":"Evening" };
     const prev=[...stash]; const updated=[entry,...stash];
     setStash(updated);
     setProfile(p=>({...p,dabsSinceClean:(p.dabsSinceClean||0)+1}));
     const prevIds=ACHIEVEMENTS.filter(a=>a.check(prev)).map(a=>a.id);
     const newIds=ACHIEVEMENTS.filter(a=>a.check(updated)).filter(a=>!prevIds.includes(a.id));
-    if(newIds.length){setToast(newIds[0]);setTimeout(()=>setToast(null),3500)}
+    if(newIds.length){haptic.achievement();setToast(newIds[0]);setTimeout(()=>setToast(null),3500)}
+    haptic.session_end();
+    setVaporTrail(true);
+    setTimeout(()=>setVaporTrail(false), 2500);
     resetSession();
   };
 
-  const resetSession = () => { setSessionActive(false);setSessionPhase("details");setSessionData({brand:"",strain:"",classification:"Hybrid",type:"Live Rosin",photo:"",spotifyUrl:"",isGlobbing:false,brand2:"",strain2:"",type2:"Live Rosin"});setRatingData({vapor:0,taste:0,potency:0,rating:0,notes:"",effects:[],flavors:[]});setBoosts(0);setTimeLeft(30);setTotalDuration(0);setIsPaused(false) };
+  const resetSession = () => { setSessionActive(false);setSessionPhase("details");setSessionData({brand:"",strain:"",classification:"Hybrid",type:"Live Rosin",photo:"",spotifyUrl:"",isGlobbing:false,brand2:"",strain2:"",type2:"Live Rosin"});setRatingData({vapor:0,taste:0,potency:0,rating:0,notes:"",effects:[],flavors:[],customRatings:{}});setBoosts(0);setTimeLeft(30);setTotalDuration(0);setIsPaused(false) };
 
   // Feature #6: Repeat last session
   const repeatLast = (item) => {
@@ -896,6 +1040,8 @@ function PuffcoCompanion() {
         input::placeholder,textarea::placeholder{color:rgba(255,255,255,0.2)}input:focus,textarea:focus{border-color:rgba(255,255,255,0.15)!important}
         .glass-panel[style*="pointer"]:hover{background:rgba(20,20,36,0.9)!important}
         .glass-panel[style*="pointer"]:active{background:rgba(28,28,44,0.95)!important}
+        @keyframes tabFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .tab-content{animation:tabFade 0.25s ease-out}
         button{-webkit-tap-highlight-color:transparent}
       `}</style>
       <SmokeBackground accent={accent} accent2={accent2} /><Starfield accent={accent} accentGrad={accentGrad} />
@@ -926,8 +1072,33 @@ function PuffcoCompanion() {
         </div>
       )}
 
+      {/* Vapor Trail Animation */}
+      {vaporTrail && (
+        <div style={{position:"fixed",inset:0,zIndex:55,pointerEvents:"none"}}>
+          <style>{`
+            @keyframes vaporUp{0%{transform:translateY(0) translateX(0) scale(1);opacity:0.6}100%{transform:translateY(-100vh) translateX(var(--vx)) scale(0.3);opacity:0}}
+            @keyframes vaporFade{0%{opacity:0}10%{opacity:1}100%{opacity:0}}
+          `}</style>
+          {Array.from({length:18}).map((_,i)=>{
+            const left = 10 + Math.random()*80;
+            const delay = Math.random()*1.2;
+            const dur = 1.5 + Math.random()*1.5;
+            const size = 4 + Math.random()*8;
+            const vx = (Math.random()-0.5)*60;
+            return <div key={i} style={{
+              position:"absolute",bottom:"5%",left:`${left}%`,
+              width:size,height:size,borderRadius:"50%",
+              background:accent,
+              opacity:0,
+              "--vx":`${vx}px`,
+              animation:`vaporUp ${dur}s ease-out ${delay}s forwards, vaporFade ${dur}s ease-out ${delay}s forwards`,
+            }}/>;
+          })}
+        </div>
+      )}
+
       {/* Session Overlay */}
-      {sessionActive && <SessionOverlay sessionPhase={sessionPhase} setSessionPhase={setSessionPhase} sessionData={sessionData} setSessionData={setSessionData} ratingData={ratingData} setRatingData={setRatingData} selectedTempF={selectedTempF} setSelectedTempF={setSelectedTempF} timeLeft={timeLeft} setTimeLeft={setTimeLeft} totalDuration={totalDuration} boosts={boosts} setBoosts={setBoosts} isPaused={isPaused} setIsPaused={setIsPaused} accent={accent} heatProfiles={heatProfiles} activeHP={activeHP} completeSession={completeSession} onClose={resetSession} photoRef={photoRef} knownBrands={[...new Set(stash.map(s=>s.brand).filter(Boolean))].sort()} knownStrains={[...new Set(stash.map(s=>s.strain).filter(Boolean))].sort()} stash={stash} />}
+      {sessionActive && <SessionOverlay sessionPhase={sessionPhase} setSessionPhase={setSessionPhase} sessionData={sessionData} setSessionData={setSessionData} ratingData={ratingData} setRatingData={setRatingData} selectedTempF={selectedTempF} setSelectedTempF={setSelectedTempF} timeLeft={timeLeft} setTimeLeft={setTimeLeft} totalDuration={totalDuration} boosts={boosts} setBoosts={setBoosts} isPaused={isPaused} setIsPaused={setIsPaused} accent={accent} heatProfiles={heatProfiles} activeHP={activeHP} completeSession={completeSession} onClose={resetSession} photoRef={photoRef} knownBrands={[...new Set(stash.map(s=>s.brand).filter(Boolean))].sort()} knownStrains={[...new Set(stash.map(s=>s.strain).filter(Boolean))].sort()} stash={stash} customRatingDims={customRatingDims.filter(d=>d.enabled)} />}
 
       <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",padding:"0 18px"}}>
         {/* Header */}
@@ -948,31 +1119,33 @@ function PuffcoCompanion() {
         </header>
 
         <div ref={scrollRef} style={{flex:1}}>
+          <div key={tab} className="tab-content">
 
           {/* ─── STASH TAB ─── */}
           {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} />}
 
           {/* ─── STATS TAB ─── */}
-          {tab==="stats"&&<StatsTab stash={stash} accent={accent} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} avg={avg} />}
+          {tab==="stats"&&<StatsTab stash={stash} accent={accent} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} avg={avg} tempPredictor={tempPredictor} />}
 
           {/* ─── CARE TAB ─── */}
           {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} />}
 
           {/* ─── PROFILE TAB (includes #9 stats summary, #18 custom profiles) ─── */}
-          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} />}
+          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} accessories={accessories} setAccessories={setAccessories} customRatingDims={customRatingDims} setCustomRatingDims={setCustomRatingDims} />}
 
           {/* ─── STRAIN ENCYCLOPEDIA (#11) ─── */}
-          {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} />}
+          {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} stash={stash} customRatingDims={customRatingDims.filter(d=>d.enabled)} />}
 
+          </div>{/* /tab-content */}
         </div>
 
         {/* Bottom Nav — flows with content, always at the bottom */}
-        <div style={{padding:"10px 0 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",background:"rgba(8,8,20,0.95)",borderRadius:18,padding:"6px 0",border:"1px solid rgba(255,255,255,0.05)"}}>
+        <nav style={{padding:"10px 0 18px"}} aria-label="Main navigation" role="navigation">
+          <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",background:"rgba(8,8,20,0.95)",borderRadius:18,padding:"6px 0",border:"1px solid rgba(255,255,255,0.05)"}} role="tablist">
             <NavItem icon="◈" label="Stash" active={tab==="stash"} onClick={()=>switchTab("stash")} accent={accent} accentGrad={accentGrad} />
             <NavItem icon="◷" label="Stats" active={tab==="stats"} onClick={()=>switchTab("stats")} accent={accent} accentGrad={accentGrad} />
-            <div style={{position:"relative",top:-22}}>
-              <button onClick={()=>{setSessionActive(true);setSessionPhase("details");setSelectedTempF(activeHP.tempF)}} style={{position:"relative",zIndex:2,width:52,height:52,borderRadius:"50%",background:accent2?`radial-gradient(circle at 45% 40%,${accent}20,${accent2}10,rgba(4,4,12,0.92))`:`radial-gradient(circle at 45% 40%,${accent}15,rgba(4,4,12,0.92))`,border:`1.5px solid ${accent}35`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:accent2?`0 0 20px ${accent}25, 0 0 40px ${accent2}15,inset 0 1px 0 rgba(255,255,255,0.06)`:`0 0 20px ${accent}25,inset 0 1px 0 rgba(255,255,255,0.06)`,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}><FlameIcon size={30} accent={accent}/></button>
+            <div style={{position:"relative",top:-10}}>
+              <button onClick={()=>{setSessionActive(true);setSessionPhase("details");setSelectedTempF(activeHP.tempF)}} style={{position:"relative",zIndex:2,width:52,height:52,borderRadius:"50%",background:accent2?`radial-gradient(circle at 45% 40%,${accent}20,${accent2}10,rgba(4,4,12,0.92))`:`radial-gradient(circle at 45% 40%,${accent}15,rgba(4,4,12,0.92))`,border:`1.5px solid ${accent}35`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:accent2?`0 0 20px ${accent}25, 0 0 40px ${accent2}15,inset 0 1px 0 rgba(255,255,255,0.06)`:`0 0 20px ${accent}25,inset 0 1px 0 rgba(255,255,255,0.06)`,cursor:"pointer",WebkitTapHighlightColor:"transparent","aria-label":"Start session"}}><FlameIcon size={26} accent={accent}/></button>
             </div>
             <NavItem icon="🔧" label="Care" active={tab==="care"} onClick={()=>switchTab("care")} accent={accent} accentGrad={accentGrad} />
             {profile.avatar ? (
@@ -990,7 +1163,7 @@ function PuffcoCompanion() {
               <NavItem icon="◉" label="Profile" active={tab==="profile"} onClick={()=>switchTab("profile")} accent={accent} accentGrad={accentGrad} />
             )}
           </div>
-        </div>
+        </nav>
       </div>
 
       {/* Session Detail Modal */}
@@ -1006,8 +1179,8 @@ function PuffcoCompanion() {
       {editingSession&&(
         <div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.98)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)setEditingSession(null)}}>
           <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
-            <button onClick={()=>setEditingSession(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
-            <h2 style={{fontSize:18,fontWeight:300,letterSpacing:3,textTransform:"uppercase",marginBottom:20}}>Edit Session</h2>
+            <button onClick={()=>setEditingSession(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
+            <h2 style={{fontSize:18,fontWeight:300,letterSpacing:3,textTransform:"uppercase",marginBottom:20}}>✎ Edit Session</h2>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
               <div><ML>Brand</ML><Input value={editingSession.brand||""} onChange={e=>setEditingSession(p=>({...p,brand:e.target.value}))}/></div>
               <div><ML>Strain</ML><Input value={editingSession.strain||""} onChange={e=>setEditingSession(p=>({...p,strain:e.target.value}))}/></div>
@@ -1038,7 +1211,7 @@ function PuffcoCompanion() {
       {changelogOpen&&(
         <div style={{position:"fixed",inset:0,zIndex:75,background:"rgba(4,4,12,0.98)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)setChangelogOpen(false)}}>
           <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
-            <button onClick={()=>setChangelogOpen(false)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+            <button onClick={()=>setChangelogOpen(false)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
 
             <div style={{fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Changelog</div>
             <h2 style={{fontSize:22,fontWeight:600,marginBottom:24}}>What's New</h2>
@@ -1198,10 +1371,11 @@ function AutoInput({ value, onChange, suggestions, placeholder, style }) {
 // ═══════════════════════════════════════════════════════
 // SESSION OVERLAY (includes #16 photo upload)
 // ═══════════════════════════════════════════════════════
-function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData,ratingData,setRatingData,selectedTempF,setSelectedTempF,timeLeft,setTimeLeft,totalDuration,boosts,setBoosts,isPaused,setIsPaused,accent,heatProfiles,activeHP,completeSession,onClose,photoRef,knownBrands,knownStrains,stash}) {
+function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData,ratingData,setRatingData,selectedTempF,setSelectedTempF,timeLeft,setTimeLeft,totalDuration,boosts,setBoosts,isPaused,setIsPaused,accent,heatProfiles,activeHP,completeSession,onClose,photoRef,knownBrands,knownStrains,stash,customRatingDims}) {
   const zone = getZone(selectedTempF + boosts*18);
   const effectiveTempF = selectedTempF + boosts*18;
   const fileRef = useRef(null);
+  const [reheats, setReheats] = useState(0);
 
   // If a brand is selected, show strains from that brand first, then all others
   const brandStrains = useMemo(() => {
@@ -1230,7 +1404,7 @@ function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData
     <div style={{position:"fixed",inset:0,zIndex:60,background:"rgba(4,4,12,0.98)",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:440,margin:"0 auto",padding:"0 24px",display:"flex",flexDirection:"column",minHeight:"100%",paddingTop:"max(54px, calc(env(safe-area-inset-top, 28px) + 26px))",paddingBottom:40}}>
         {/* Close button — only during setup phases */}
-        {(sessionPhase==="details"||sessionPhase==="select")&&<button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:65,WebkitTapHighlightColor:"transparent"}}>✕</button>}
+        {(sessionPhase==="details"||sessionPhase==="select")&&<button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:65,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>}
 
         {/* Step Indicator */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:0,marginBottom:24,padding:"0 10px"}}>
@@ -1365,7 +1539,7 @@ function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData
               <input type="range" min={400} max={620} value={selectedTempF} onChange={e=>setSelectedTempF(Number(e.target.value))} style={{flex:1,accentColor:accent}} />
               <span style={{fontSize:14,fontFamily:"'JetBrains Mono',monospace",fontWeight:500,minWidth:50,textAlign:"right"}}>{selectedTempF}°</span>
             </div>
-            <Btn accent={getZone(selectedTempF).hex} onClick={()=>{setSessionPhase("heating");if(navigator.vibrate)navigator.vibrate([80,60,80,60,120])}}>⚡ Begin Session</Btn>
+            <Btn accent={getZone(selectedTempF).hex} onClick={()=>{setSessionPhase("heating");haptic.session_start()}}>⚡ Begin Session</Btn>
           </div>
         )}
 
@@ -1407,13 +1581,13 @@ function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData
             })()}
             {sessionPhase==="heating"?(
               <div style={{width:"100%",display:"flex",flexDirection:"column",gap:10}}>
-                <Btn accent="white" onClick={()=>{setSessionPhase("active");setTimeLeft(30);if(navigator.vibrate)navigator.vibrate([100,80,150,80,250])}}>Start Inhale Timer</Btn>
+                <Btn accent="white" onClick={()=>{setSessionPhase("active");setTimeLeft(30);haptic.heating()}}>Start Inhale Timer</Btn>
                 <Btn secondary onClick={onClose}>Cancel</Btn>
               </div>
             ):(
               <div style={{width:"100%",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                  {[{label:"+30s",icon:"⏱",fn:()=>setTimeLeft(p=>p+30)},{label:isPaused?"Resume":"Pause",icon:isPaused?"▶":"⏸",fn:()=>setIsPaused(p=>!p)},{label:"+18°F",icon:"🔥",fn:()=>setBoosts(p=>p+1)}].map(b=><button key={b.label} onClick={b.fn} style={{padding:"14px 0",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"white",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:500}}><span style={{fontSize:16}}>{b.icon}</span>{b.label}</button>)}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+                  {[{label:"+30s",icon:"⏱",fn:()=>setTimeLeft(p=>p+30)},{label:isPaused?"Resume":"Pause",icon:isPaused?"▶":"⏸",fn:()=>setIsPaused(p=>!p)},{label:"+18°F",icon:"🔥",fn:()=>setBoosts(p=>p+1)},{label:`Reheat${reheats>0?" ×"+reheats:""}`,icon:"🔄",fn:()=>{setReheats(p=>p+1);setSessionData(p=>({...p,reheats:(p.reheats||0)+1}));setTimeLeft(30);haptic.reheat()}}].map(b=><button key={b.label} onClick={b.fn} style={{padding:"12px 0",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"white",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:500,WebkitTapHighlightColor:"transparent"}}><span style={{fontSize:14}}>{b.icon}</span>{b.label}</button>)}
                 </div>
                 <Btn accent="white" onClick={()=>setSessionPhase("effects")}>End Session</Btn>
               </div>
@@ -1438,7 +1612,8 @@ function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData
           <div className="fu fu1" style={{flex:1}}>
             <div style={{textAlign:"center",marginBottom:24}}><h2 style={{fontSize:22,fontWeight:300,letterSpacing:4,textTransform:"uppercase"}}>Rate Session</h2></div>
             <div style={{display:"flex",flexDirection:"column",gap:18,marginBottom:24}}>
-              {[{key:"vapor",label:"Vapor Quality"},{key:"taste",label:"Taste / Terps"},{key:"potency",label:"Potency"},{key:"rating",label:"Overall"}].map(m=><div key={m.key}><ML>{m.label}</ML><div style={{display:"flex",gap:6}}>{[1,2,3,4,5].map(s=><button key={s} onClick={()=>setRatingData(p=>({...p,[m.key]:s}))} style={{background:"none",border:"none",cursor:"pointer",padding:2}}><Leaf size={24} filled={s<=ratingData[m.key]} accent={accent}/></button>)}</div></div>)}
+              {[{key:"vapor",label:"Vapor Quality"},{key:"taste",label:"Taste / Terps"},{key:"potency",label:"Potency"},{key:"rating",label:"Overall"}].map(m=><div key={m.key}><ML>{m.label}</ML><div style={{display:"flex",gap:6}}>{[1,2,3,4,5].map(s=><button key={s} onClick={()=>{haptic.light();setRatingData(p=>({...p,[m.key]:s}))}} style={{background:"none",border:"none",cursor:"pointer",padding:2}}><Leaf size={24} filled={s<=ratingData[m.key]} accent={accent}/></button>)}</div></div>)}
+              {customRatingDims&&customRatingDims.length>0&&customRatingDims.map(d=><div key={d.id}><ML>{d.label}</ML><div style={{display:"flex",gap:6}}>{[1,2,3,4,5].map(s=><button key={s} onClick={()=>{haptic.light();setRatingData(p=>({...p,customRatings:{...(p.customRatings||{}),[d.id]:s}}))}} style={{background:"none",border:"none",cursor:"pointer",padding:2}}><Leaf size={24} filled={s<=(ratingData.customRatings||{})[d.id]} accent={accent}/></button>)}</div></div>)}
               <div><ML>Notes</ML><Input rows={2} value={ratingData.notes} onChange={e=>setRatingData(p=>({...p,notes:e.target.value}))} placeholder="Flavor, effects, thoughts..."/></div>
             </div>
             {/* Flavor Tags — post-dab */}
@@ -1487,7 +1662,7 @@ function FlipSessionCard({ item, accent, onSelect }) {
     pressTimer.current = setTimeout(() => {
       didLongPress.current = true;
       onSelect(item);
-      if (navigator.vibrate) navigator.vibrate(30);
+      haptic.medium();
     }, 300);
   };
   const onPointerUp = () => {
@@ -1533,7 +1708,7 @@ function FlipSessionCard({ item, accent, onSelect }) {
                   {item.notes && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontStyle: "italic", marginTop: 6, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{item.notes}"</div>}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: z.hex }} /><span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{item.finalTempF}°</span></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: z.hex }} /><span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{item.heatProfileName||z.name} · {item.finalTempF}°</span></div>
                   <div style={{ display: "flex", gap: 1 }}>{[1, 2, 3, 4, 5].map(s => <Leaf key={s} size={9} filled={s <= item.rating} accent={accent} />)}</div>
                   <span style={{ fontSize: 8, color: "rgba(255,255,255,0.2)", fontFamily: "'JetBrains Mono',monospace" }}>{item.date}</span>
                 </div>
@@ -1558,7 +1733,7 @@ function FlipSessionCard({ item, accent, onSelect }) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: z.hex }} />
-                <span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{z.name} · {item.finalTempF}°F</span>
+                <span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{item.heatProfileName||z.name} · {item.finalTempF}°F</span>
               </div>
             </div>
             {/* Rating bars */}
@@ -1682,7 +1857,7 @@ function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashS
 // ═══════════════════════════════════════════════════════
 // STATS TAB
 // ═══════════════════════════════════════════════════════
-function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
+function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg,tempPredictor}) {
   const tempCounts=stash.reduce((a,s)=>{const z=getZone(s.finalTempF||500).name;a[z]=(a[z]||0)+1;return a},{});
   const hasData = stash.length > 0;
   return (
@@ -1704,7 +1879,7 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
         ].map((s,i)=><Glass key={i} style={{padding:16}}><div style={{fontSize:20,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{s.l}</div></Glass>)}
       </div>
       <Glass style={{marginBottom:14}}><ML>Temp Distribution</ML><div style={{display:"flex",alignItems:"flex-end",gap:8,height:70,marginTop:10}}>{HEAT_ZONES.map(z=>{const c=tempCounts[z.name]||0;const mx=Math.max(...Object.values(tempCounts),1);return <div key={z.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{c}</span><div style={{width:"100%",height:`${hasData?(c/mx)*50:0}px`,borderRadius:5,background:`linear-gradient(to top,${z.hex}40,${z.hex}10)`,border:`1px solid ${z.hex}20`}}/><div style={{width:7,height:7,borderRadius:"50%",background:z.hex}}/></div>})}</div></Glass>
-      <Glass style={{marginBottom:14}}><ML>Achievements · {unlocked.length}/{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).length}</ML><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).map(a=>{const earned=a.check(stash);return <div key={a.id} title={a.title} style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:earned?`${accent}15`:"rgba(255,255,255,0.02)",border:`1px solid ${earned?accent+"40":"rgba(255,255,255,0.05)"}`,fontSize:18,opacity:earned?1:0.3}}>{a.secret&&!earned?"❓":a.emoji}</div>})}</div></Glass>
+      <Glass style={{marginBottom:14}}><ML>Achievements · {unlocked.length}/{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).length}</ML><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).map(a=><AchievementBadge key={a.id} achievement={a} earned={a.check(stash)} accent={accent} />)}</div></Glass>
 
       {/* Potency Prediction */}
       <Glass style={{marginBottom:14}}>
@@ -1732,6 +1907,39 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
               <span style={{fontSize:10,fontWeight:600}}>{bestZone.name}</span>
               <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}> zone — avg {bestZone.avg.toFixed(1)}★</span>
             </div>}
+          </>;
+        })()}
+      </Glass>
+
+      {/* Optimal Temp Predictor */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Optimal Temp Predictor</ML>
+        {(()=>{
+          if(!tempPredictor) return <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Log 5+ rated sessions to unlock temp predictions</p>;
+          return <>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5,marginBottom:12}}>Your highest-rated setup based on {stash.length} sessions:</p>
+            <div style={{padding:"12px 14px",borderRadius:12,background:`${accent}08`,border:`1px solid ${accent}20`,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>{tempPredictor.top.type}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{tempPredictor.top.zone} zone · {tempPredictor.top.time||"Any time"}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:18,fontWeight:300,fontFamily:"'JetBrains Mono',monospace"}}>{tempPredictor.top.avgTemp}°F</div>
+                  <div style={{fontSize:9,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{tempPredictor.top.avgRating.toFixed(1)}★ avg</div>
+                </div>
+              </div>
+            </div>
+            {tempPredictor.typeRecs.length>0&&<><ML style={{marginTop:8}}>By Extract Type</ML>
+            {tempPredictor.typeRecs.map(t=>(
+              <div key={t.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <span style={{fontSize:11}}>{t.type}</span>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{t.optimalTemp}°F</span>
+                  <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{t.avgRating}★ · {t.count}x</span>
+                </div>
+              </div>
+            ))}</>}
           </>;
         })()}
       </Glass>
@@ -1852,7 +2060,7 @@ function CareTab({profile,accent,onClean,setProfile}) {
 // ═══════════════════════════════════════════════════════
 // PROFILE TAB (#9 stats summary, #18 custom profiles)
 // ═══════════════════════════════════════════════════════
-function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile}) {
+function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile,accessories,setAccessories,customRatingDims,setCustomRatingDims}) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [previewFrame, setPreviewFrame] = useState(null);
   const accent2 = profile.accent2 || null;
@@ -1916,8 +2124,52 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
         </div>
         <div style={{fontSize:18,fontWeight:500,marginBottom:4}}>{profile.name||"Set Your Name"}</div>
         <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase"}}>{profile.device} · {stash.length} sessions</div>
+        {profile.location&&<div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>📍 {profile.location} · {profile.market==="black"?"BM":"Rec"}</div>}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}><span style={{fontSize:14}}>{lvl.emoji}</span><span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:accent,letterSpacing:1.5}}>Lv.{lvl.level} {lvl.title}</span></div>
+        {profile.bio&&<div style={{fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic",marginTop:8,lineHeight:1.5,maxWidth:280,margin:"8px auto 0"}}>"{profile.bio}"</div>}
         <p style={{fontSize:9,color:"rgba(255,255,255,0.15)",marginTop:8,fontFamily:"'JetBrains Mono',monospace"}}>Tap photo to change</p>
+      </Glass>
+
+      {/* Bio, Name & Location */}
+      <Glass style={{marginBottom:14}}>
+        <ML>About You</ML>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <ML>Name</ML>
+            <Input value={profile.name||""} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name" />
+          </div>
+          <div>
+            <ML>Device</ML>
+            <select value={profile.device||"Peak"} onChange={e=>setProfile(p=>({...p,device:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
+              {["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><option key={d} value={d} style={{background:"#111"}}>{d}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <ML>Bio</ML>
+          <Input rows={2} value={profile.bio||""} onChange={e=>setProfile(p=>({...p,bio:e.target.value.slice(0,200)}))} placeholder="Tell the community about yourself..." style={{fontSize:12}} />
+          <div style={{textAlign:"right",fontSize:7,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{(profile.bio||"").length}/200</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div>
+            <ML>Location</ML>
+            <Input value={profile.location||""} onChange={e=>setProfile(p=>({...p,location:e.target.value}))} placeholder="e.g. Portland, OR" />
+          </div>
+          <div>
+            <ML>Market</ML>
+            <div style={{display:"flex",gap:6}}>
+              {[{id:"rec",label:"Rec"},{id:"med",label:"Med"},{id:"black",label:"BM"}].map(m=>(
+                <button key={m.id} onClick={()=>setProfile(p=>({...p,market:m.id}))} style={{
+                  flex:1,padding:"10px 0",borderRadius:10,fontSize:9,letterSpacing:1,textTransform:"uppercase",fontWeight:600,cursor:"pointer",
+                  fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",
+                  background:(profile.market||"rec")===m.id?`${accent}15`:"rgba(255,255,255,0.03)",
+                  border:`1px solid ${(profile.market||"rec")===m.id?accent+"40":"rgba(255,255,255,0.06)"}`,
+                  color:(profile.market||"rec")===m.id?accent:"rgba(255,255,255,0.35)",
+                }}>{m.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
       </Glass>
 
       {/* Feature #9: Profile Stats Summary */}
@@ -1970,7 +2222,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
             </div>
             <div style={{display:"flex",gap:8}}>
               {!editingProfile.isNew&&<Btn secondary onClick={()=>{setHeatProfiles(p=>p.filter(x=>x.id!==editingProfile.id));if(activeProfileId===editingProfile.id&&heatProfiles.length>1)setActiveProfileId(heatProfiles.find(x=>x.id!==editingProfile.id).id);setEditingProfile(null)}} style={{flex:1,color:"#ef4444"}}>Delete</Btn>}
-              <Btn accent={accent} disabled={!editingProfile.name.trim()} onClick={()=>{if(!editingProfile.name.trim())return;if(editingProfile.isNew){const{isNew,...rest}=editingProfile;setHeatProfiles(p=>[...p,rest])}else{setHeatProfiles(p=>p.map(x=>x.id===editingProfile.id?editingProfile:x))}setEditingProfile(null)}} style={{flex:1}}>Save</Btn>
+              <Btn accent={accent} disabled={!editingProfile.name.trim()} onClick={()=>{if(!editingProfile.name.trim())return;if(editingProfile.isNew){const{isNew,...rest}=editingProfile;setHeatProfiles(p=>[...p,rest])}else{setHeatProfiles(p=>p.map(x=>x.id===editingProfile.id?editingProfile:x))}setEditingProfile(null)}} style={{flex:1}}>💾 Save</Btn>
             </div>
           </div>
         </div>
@@ -2091,7 +2343,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
       {/* Frame Preview Modal */}
       {previewFrame && (
         <div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.97)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}} onPointerDown={e=>{if(e.target===e.currentTarget)setPreviewFrame(null)}}>
-          <button onClick={()=>setPreviewFrame(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+          <button onClick={()=>setPreviewFrame(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
             {/* Large preview with avatar */}
             <div style={{position:"relative",width:120,height:120}}>
@@ -2126,7 +2378,70 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
       )}
 
       {/* Achievements */}
-      <Glass style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><ML style={{marginBottom:0}}>Achievements</ML><span style={{fontSize:10,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{unlocked.length}/{ACHIEVEMENTS.length}</span></div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{unlocked.map(a=><div key={a.id} style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:`${accent}12`,border:`1px solid ${accent}30`,fontSize:16}}>{a.emoji}</div>)}{ACHIEVEMENTS.filter(a=>!a.check(stash)&&!a.secret).map(a=><div key={a.id} style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)",fontSize:14,opacity:0.25}}>{a.emoji}</div>)}</div></Glass>
+      <Glass style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><ML style={{marginBottom:0}}>Achievements</ML><span style={{fontSize:10,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{unlocked.length}/{ACHIEVEMENTS.length}</span></div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{ACHIEVEMENTS.map(a=><AchievementBadge key={a.id} achievement={a} earned={a.check(stash)} accent={accent} size="small" />)}</div></Glass>
+
+      {/* Accessory Inventory */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Accessories</ML>
+        {accessories.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+          {accessories.map((a,i)=>(
+            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+              {a.photo&&<div style={{width:36,height:36,borderRadius:8,overflow:"hidden",flexShrink:0}}><img src={a.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:500}}>{a.name}</div>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{a.type}{a.brand?" · "+a.brand:""}</div>
+              </div>
+              <button onClick={()=>{const updated=accessories.filter((_,j)=>j!==i);setAccessories(updated);storageSet("puffco-accessories",updated)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",cursor:"pointer",fontSize:12}}>✕</button>
+            </div>
+          ))}
+        </div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <Input value={profile._accName||""} onChange={e=>setProfile(p=>({...p,_accName:e.target.value}))} placeholder="Name" />
+          <select value={profile._accType||"Glass"} onChange={e=>setProfile(p=>({...p,_accType:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
+            {["Glass","Cap","Tether","Chamber","Atomizer","Ball Cap","Oculus","Travel Pack","Other"].map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}
+          </select>
+        </div>
+        <Input value={profile._accBrand||""} onChange={e=>setProfile(p=>({...p,_accBrand:e.target.value}))} placeholder="Brand (optional)" style={{marginBottom:8}} />
+        <Btn secondary small onClick={()=>{
+          if(!(profile._accName||"").trim())return;
+          const acc={id:Date.now(),name:profile._accName.trim(),type:profile._accType||"Glass",brand:profile._accBrand||""};
+          const updated=[...accessories,acc];setAccessories(updated);storageSet("puffco-accessories",updated);
+          setProfile(p=>({...p,_accName:"",_accBrand:""}));haptic.success();
+        }}>+ Add Accessory</Btn>
+      </Glass>
+
+      {/* Custom Rating Dimensions */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Custom Rating Dimensions</ML>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginBottom:10,lineHeight:1.4}}>Toggle extra rating categories that appear during session rating.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {customRatingDims.map(d=>(
+            <button key={d.id} onClick={()=>{
+              const updated=customRatingDims.map(x=>x.id===d.id?{...x,enabled:!x.enabled}:x);
+              setCustomRatingDims(updated);storageSet("puffco-custom-ratings",updated);haptic.tap();
+            }} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
+              background:d.enabled?`${accent}10`:"rgba(255,255,255,0.02)",border:`1px solid ${d.enabled?accent+"30":"rgba(255,255,255,0.06)"}`}}>
+              <span style={{fontSize:12,color:d.enabled?"white":"rgba(255,255,255,0.35)"}}>{d.label}</span>
+              <div style={{width:36,height:20,borderRadius:10,background:d.enabled?accent:"rgba(255,255,255,0.1)",transition:"background 0.2s",position:"relative"}}>
+                <div style={{width:16,height:16,borderRadius:"50%",background:"white",position:"absolute",top:2,left:d.enabled?18:2,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Glass>
+
+      {/* Storage Warning */}
+      {typeof localStorage!=="undefined"&&getStorageUsage()>STORAGE_WARN_BYTES&&(
+        <Glass style={{marginBottom:14,border:"1px solid rgba(250,204,21,0.2)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:20}}>⚠️</span>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:"#facc15"}}>Storage Almost Full</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",lineHeight:1.4,marginTop:2}}>You're using {(getStorageUsage()/1000000).toFixed(1)}MB of local storage. Export a backup and consider removing old session photos to free space.</div>
+            </div>
+          </div>
+        </Glass>
+      )}
 
       {/* Export/Import */}
       <Glass style={{marginBottom:14}}><ML>Data</ML><div style={{display:"flex",gap:8}}><Btn secondary style={{flex:1}} onClick={()=>{const d=JSON.stringify({stash,profile,heatProfiles,version:APP_VERSION});const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="puffco-backup.json";a.click();URL.revokeObjectURL(u)}}>Export</Btn><Btn secondary style={{flex:1}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.stash){await storageSet("puffco-stash",d.stash);setStash(d.stash)}if(d.profile){await storageSet("puffco-profile",d.profile);setProfile(d.profile)}if(d.heatProfiles){await storageSet("puffco-heat-profiles",d.heatProfiles);setHeatProfiles(d.heatProfiles)}}catch{alert("Invalid backup")}};i.click()}}>Import</Btn></div></Glass>
@@ -2202,7 +2517,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
               <>
                 <ML>Type</ML>
                 <div style={{display:"flex",gap:8,marginBottom:14}}>
-                  {[{id:"bug",label:"Bug Report",icon:"🐛"},{id:"idea",label:"Feature Idea",icon:"💡"},{id:"other",label:"Other",icon:"💬"}].map(t => (
+                  {[{id:"bug",label:"🐛 Report",icon:"🐛"},{id:"idea",label:"Feature 💡",icon:"💡"},{id:"other",label:"Other",icon:"Other"}].map(t => (
                     <button key={t.id} onClick={()=>setTicketType(t.id)} style={{
                       flex:1, padding:"10px 8px", borderRadius:10, cursor:"pointer",
                       background: ticketType===t.id ? `${accent}15` : "rgba(255,255,255,0.03)",
@@ -2232,7 +2547,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
                   {tickets.slice(0, 5).map(t => (
                     <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
-                        <span style={{fontSize:14}}>{t.type==="bug"?"🐛":t.type==="idea"?"💡":"💬"}</span>
+                        <span style={{fontSize:14}}>{t.type==="bug"?"🐛":t.type==="idea"?"💡":"Other"}</span>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"rgba(255,255,255,0.6)"}}>{t.text}</div>
                           <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{t.date}</div>
@@ -2256,21 +2571,26 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
 // ═══════════════════════════════════════════════════════
 // FEATURE #11: STRAIN ENCYCLOPEDIA
 // ═══════════════════════════════════════════════════════
-function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,setTab}) {
+function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,setTab,stash}) {
   const [encSearch, setEncSearch] = useState("");
-  const [encSort, setEncSort] = useState("count"); // count, rating, alpha
+  const [encSort, setEncSort] = useState("count");
+  const [folders, setFolders] = useState([]);
+  const [activeFolder, setActiveFolder] = useState(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [showNewFolder, setShowNewFolder] = useState(false);
+
+  useEffect(() => { (async () => { try { const f = await storageGet("puffco-folders", []); setFolders(f); } catch {} })(); }, []);
+  const saveFolders = async (f) => { setFolders(f); await storageSet("puffco-folders", f); };
+  const createFolder = () => { if (!newFolderName.trim()) return; saveFolders([...folders, { id: Date.now(), name: newFolderName.trim(), strains: [] }]); setNewFolderName(""); setShowNewFolder(false); };
+  const deleteFolder = (id) => { saveFolders(folders.filter(f => f.id !== id)); if (activeFolder === id) setActiveFolder(null); };
+  const toggleStrainInFolder = (folderId, strainKey) => { saveFolders(folders.map(f => f.id === folderId ? { ...f, strains: f.strains.includes(strainKey) ? f.strains.filter(s => s !== strainKey) : [...f.strains, strainKey] } : f)); };
+
   const allEntries = Object.entries(strainMap);
   let entries = allEntries;
-  if (encSearch.trim()) {
-    const q = encSearch.toLowerCase();
-    entries = entries.filter(([,d]) => d.strain.toLowerCase().includes(q) || d.brand.toLowerCase().includes(q) || [...d.types].some(t => t.toLowerCase().includes(q)));
-  }
+  if (activeFolder) { const folder = folders.find(f => f.id === activeFolder); if (folder) entries = entries.filter(([key]) => folder.strains.includes(key)); }
+  if (encSearch.trim()) { const q = encSearch.toLowerCase(); entries = entries.filter(([,d]) => d.strain.toLowerCase().includes(q) || d.brand.toLowerCase().includes(q) || [...d.types].some(t => t.toLowerCase().includes(q))); }
   if (encSort === "count") entries = entries.sort((a,b) => b[1].sessions.length - a[1].sessions.length);
-  else if (encSort === "rating") entries = entries.sort((a,b) => {
-    const ar = b[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (b[1].sessions.filter(x=>x.rating>0).length||1);
-    const br = a[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (a[1].sessions.filter(x=>x.rating>0).length||1);
-    return ar - br;
-  });
+  else if (encSort === "rating") entries = entries.sort((a,b) => { const ar = b[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (b[1].sessions.filter(x=>x.rating>0).length||1); const br = a[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (a[1].sessions.filter(x=>x.rating>0).length||1); return ar - br; });
   else entries = entries.sort((a,b) => a[1].strain.localeCompare(b[1].strain));
 
   return (
@@ -2279,6 +2599,14 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
         <div><h2 style={{fontSize:20,fontWeight:600}}>Strain Encyclopedia</h2><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>{allEntries.length} unique strain{allEntries.length!==1?"s":""}</p></div>
         <button onClick={()=>setTab("stash")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}}>← Back</button>
       </div>
+      {/* Folders */}
+      <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+        <button onClick={()=>setActiveFolder(null)} style={{padding:"6px 14px",borderRadius:16,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,flexShrink:0,WebkitTapHighlightColor:"transparent",background:!activeFolder?accent:"transparent",color:!activeFolder?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${!activeFolder?accent:accent+"30"}`}}>All</button>
+        {folders.map(f=>(<button key={f.id} onClick={()=>setActiveFolder(activeFolder===f.id?null:f.id)} style={{padding:"6px 14px",borderRadius:16,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,flexShrink:0,WebkitTapHighlightColor:"transparent",display:"flex",alignItems:"center",gap:4,background:activeFolder===f.id?accent:"transparent",color:activeFolder===f.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${activeFolder===f.id?accent:accent+"30"}`}}>{f.name} <span style={{opacity:0.6}}>({f.strains.length})</span></button>))}
+        <button onClick={()=>setShowNewFolder(true)} style={{padding:"6px 14px",borderRadius:16,fontSize:8,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,WebkitTapHighlightColor:"transparent",background:"transparent",color:"rgba(255,255,255,0.2)",border:"1px dashed rgba(255,255,255,0.1)"}}>+ Folder</button>
+      </div>
+      {showNewFolder&&(<Glass style={{marginBottom:12,display:"flex",gap:8,alignItems:"center"}}><Input value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} placeholder="Folder name..." style={{flex:1}} /><button onClick={createFolder} style={{padding:"8px 16px",borderRadius:10,background:accent,border:"none",color:"#000",fontSize:9,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",cursor:"pointer",letterSpacing:1,WebkitTapHighlightColor:"transparent"}}>Add</button><button onClick={()=>{setShowNewFolder(false);setNewFolderName("")}} style={{padding:"8px 10px",borderRadius:10,background:"transparent",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.4)",fontSize:9,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>✕</button></Glass>)}
+      {activeFolder&&(()=>{const f=folders.find(x=>x.id===activeFolder);return f?(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{f.name}</span><button onClick={()=>deleteFolder(f.id)} style={{background:"none",border:"none",color:"rgba(239,68,68,0.5)",fontSize:8,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",WebkitTapHighlightColor:"transparent"}}>Delete Folder</button></div>):null})()}
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
         <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"rgba(255,255,255,0.2)"}}>⌕</span>
@@ -2287,11 +2615,9 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
       </div>
       {/* Sort */}
       <div style={{display:"flex",gap:6,marginBottom:14}}>
-        {[{id:"count",label:"Most Dabbed"},{id:"rating",label:"Top Rated"},{id:"alpha",label:"A → Z"}].map(s=>(
-          <button key={s.id} onClick={()=>setEncSort(s.id)} style={{padding:"5px 12px",borderRadius:16,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,WebkitTapHighlightColor:"transparent",background:encSort===s.id?accent:"transparent",color:encSort===s.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${encSort===s.id?accent:accent+"30"}`}}>{s.label}</button>
-        ))}
+        {[{id:"count",label:"Most Dabbed"},{id:"rating",label:"Top Rated"},{id:"alpha",label:"A → Z"}].map(s=>(<button key={s.id} onClick={()=>setEncSort(s.id)} style={{padding:"5px 12px",borderRadius:16,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,WebkitTapHighlightColor:"transparent",background:encSort===s.id?accent:"transparent",color:encSort===s.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${encSort===s.id?accent:accent+"30"}`}}>{s.label}</button>))}
       </div>
-      {entries.length===0?<div style={{textAlign:"center",padding:"60px 0"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{encSearch?"No results":"Log sessions to build your encyclopedia"}</p></div>
+      {entries.length===0?<div style={{textAlign:"center",padding:"60px 0"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{encSearch?"No results":activeFolder?"No strains in this folder":"Log sessions to build your encyclopedia"}</p></div>
       :<div style={{display:"flex",flexDirection:"column",gap:8}}>
         {entries.map(([key,data])=>{
           const avgR=data.sessions.filter(s=>s.rating>0).length?(data.sessions.reduce((a,s)=>a+(s.rating||0),0)/data.sessions.filter(s=>s.rating>0).length).toFixed(1):"—";
@@ -2299,21 +2625,22 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
           const z=bestTemp?getZone(bestTemp.finalTempF):null;
           const photo=data.sessions.find(s=>s.photo)?.photo;
           return (
-            <Glass key={key} onClick={()=>setStrainView(key)} style={{padding:0,cursor:"pointer",overflow:"hidden"}}>
-              {photo&&<div style={{width:"100%",height:80,overflow:"hidden"}}><img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover",opacity:0.6}}/></div>}
-              <div style={{padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
-                    <div style={{fontSize:14,fontWeight:500,marginTop:2}}>{data.strain}</div>
-                    <div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{data.sessions.length} session{data.sessions.length!==1?"s":""} · {[...data.types].join(", ")}</div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-                    <div style={{fontSize:16,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{avgR}{avgR!=="—"&&"★"}</div>
-                    {z&&<div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono',monospace"}}>{bestTemp.finalTempF}°</span></div>}
-                  </div>
+            <Glass key={key} style={{padding:0,overflow:"hidden"}}>
+              <div onClick={()=>setStrainView(key)} style={{display:"flex",cursor:"pointer"}}>
+              {photo&&<div style={{width:60,height:60,flexShrink:0,overflow:"hidden"}}><img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+              <div style={{flex:1,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
+                  <div style={{fontSize:13,fontWeight:500,marginTop:2}}>{data.strain}</div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{data.sessions.length} session{data.sessions.length!==1?"s":""}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:16,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{avgR}{avgR!=="—"&&"★"}</div>
+                  {z&&<div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono',monospace"}}>{bestTemp.finalTempF}°</span></div>}
                 </div>
               </div>
+              </div>
+              {folders.length>0&&(<div style={{display:"flex",gap:4,padding:"0 10px 8px",flexWrap:"wrap"}}>{folders.map(f=>{const inF=f.strains.includes(key);return <button key={f.id} onClick={(e)=>{e.stopPropagation();toggleStrainInFolder(f.id,key)}} style={{fontSize:7,padding:"3px 8px",borderRadius:8,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",background:inF?`${accent}15`:"transparent",border:`1px solid ${inF?accent+"30":"rgba(255,255,255,0.06)"}`,color:inF?accent:"rgba(255,255,255,0.2)"}}>{inF?"• ":""}{f.name}</button>})}</div>)}
             </Glass>
           );
         })}
@@ -2323,7 +2650,84 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
 }
 
 // Strain Detail Modal
+// ─── Strain Trading Card ──────────────────────────────
+function StrainTradingCard({data,accent,onClose}) {
+  const sessions = data.sessions;
+  const avgR=sessions.filter(s=>s.rating>0).length?(sessions.reduce((a,s)=>a+(s.rating||0),0)/sessions.filter(s=>s.rating>0).length).toFixed(1):"—";
+  const photo=sessions.find(s=>s.photo)?.photo;
+  const topEffect = (()=>{const ec={};sessions.flatMap(s=>s.effects||[]).forEach(e=>{ec[e]=(ec[e]||0)+1});const top=Object.entries(ec).sort((a,b)=>b[1]-a[1])[0];return top?EFFECTS_LIST.find(x=>x.id===top[0]):null})();
+  const bestTemp = sessions.filter(s=>s.finalTempF).sort((a,b)=>(b.rating||0)-(a.rating||0))[0];
+  // Generate a unique hash for the holographic pattern
+  const hash = (data.brand+data.strain).split("").reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0,0);
+  const hue1 = Math.abs(hash%360);
+  const hue2 = (hue1+120)%360;
+  const hue3 = (hue1+240)%360;
+  const rarity = sessions.length>=20?"Legendary":sessions.length>=10?"Rare":sessions.length>=5?"Uncommon":"Common";
+  const rarityColor = {Legendary:"#fbbf24",Rare:"#a78bfa",Uncommon:"#34d399",Common:"rgba(255,255,255,0.4)"}[rarity];
+  
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:280,borderRadius:20,overflow:"hidden",position:"relative",background:"#0a0a18",border:`1px solid ${accent}40`,boxShadow:`0 0 40px ${accent}20, 0 20px 60px rgba(0,0,0,0.5)`}}>
+        {/* Holographic overlay */}
+        <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg, hsla(${hue1},70%,60%,0.08) 0%, hsla(${hue2},70%,60%,0.05) 33%, hsla(${hue3},70%,60%,0.08) 66%, hsla(${hue1},70%,60%,0.05) 100%)`,pointerEvents:"none",zIndex:2}}/>
+        <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 30% 20%, hsla(${hue1},80%,70%,0.12) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, hsla(${hue2},80%,70%,0.1) 0%, transparent 50%)`,pointerEvents:"none",zIndex:2}}/>
+        {/* Shimmer line */}
+        <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:3}}>
+          <div style={{position:"absolute",top:0,left:"-100%",width:"50%",height:"100%",background:"linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)",animation:"shimmer 3s ease-in-out infinite"}}/>
+        </div>
+        
+        {/* Card content */}
+        <div style={{position:"relative",zIndex:1,padding:20}}>
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+            <div style={{fontSize:7,letterSpacing:3,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Puffco Companion</div>
+            <div style={{fontSize:7,letterSpacing:2,color:rarityColor,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{rarity}</div>
+          </div>
+          
+          {/* Photo or pattern */}
+          <div style={{width:"100%",height:140,borderRadius:14,overflow:"hidden",marginBottom:14,background:`linear-gradient(135deg, ${accent}15, rgba(255,255,255,0.02))`,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+            {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:(
+              <svg viewBox="0 0 200 140" style={{width:"100%",height:"100%",opacity:0.15}}>
+                {Array.from({length:8}).map((_,i)=><circle key={i} cx={30+Math.abs((hash*i*17)%140)} cy={20+Math.abs((hash*i*23)%100)} r={8+Math.abs((hash*i*7)%12)} fill={accent} opacity={0.2+Math.abs((hash*i*3)%5)*0.1}/>)}
+                {Array.from({length:4}).map((_,i)=><line key={i} x1={Math.abs((hash*i*31)%200)} y1={Math.abs((hash*i*13)%140)} x2={Math.abs((hash*i*41)%200)} y2={Math.abs((hash*i*19)%140)} stroke={accent} strokeWidth="0.5" opacity="0.3"/>)}
+              </svg>
+            )}
+          </div>
+          
+          {/* Strain info */}
+          <div style={{fontSize:8,letterSpacing:2.5,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
+          <div style={{fontSize:20,fontWeight:600,marginTop:2,letterSpacing:-0.3}}>{data.strain}</div>
+          <div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{[...data.types].join(" · ")}</div>
+          
+          {/* Stats grid */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:14}}>
+            <div style={{textAlign:"center",padding:"8px 0",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{fontSize:16,fontWeight:300,fontFamily:"'JetBrains Mono',monospace"}}>{avgR}</div>
+              <div style={{fontSize:6,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>Rating</div>
+            </div>
+            <div style={{textAlign:"center",padding:"8px 0",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{fontSize:16,fontWeight:300,fontFamily:"'JetBrains Mono',monospace"}}>{sessions.length}</div>
+              <div style={{fontSize:6,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>Sessions</div>
+            </div>
+            <div style={{textAlign:"center",padding:"8px 0",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{fontSize:16,fontWeight:300,fontFamily:"'JetBrains Mono',monospace"}}>{bestTemp?bestTemp.finalTempF+"°":"—"}</div>
+              <div style={{fontSize:6,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>Best Temp</div>
+            </div>
+          </div>
+          
+          {/* Effect + footer */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12}}>
+            {topEffect&&<span style={{fontSize:8,padding:"3px 8px",borderRadius:8,background:`${accent}12`,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{topEffect.emoji} {topEffect.label}</span>}
+            <span style={{fontSize:7,color:"rgba(255,255,255,0.12)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1}}>#{Math.abs(hash).toString(16).slice(0,6).toUpperCase()}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StrainDetailModal({strainKey,strainMap,accent,onClose,onSelect}) {
+  const [showCard, setShowCard] = useState(false);
   const data = strainMap[strainKey];
   if (!data) return null;
   const sessions = data.sessions;
@@ -2339,7 +2743,7 @@ function StrainDetailModal({strainKey,strainMap,accent,onClose,onSelect}) {
   return (
     <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.96)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
       <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
-        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
         {photo&&<div style={{width:"100%",height:160,borderRadius:18,overflow:"hidden",marginBottom:16}}><img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
         <Glass style={{marginBottom:14}}>
           <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
@@ -2351,6 +2755,8 @@ function StrainDetailModal({strainKey,strainMap,accent,onClose,onSelect}) {
         </div>
         {topEffects.length>0&&<Glass style={{marginBottom:14}}><ML>Common Effects</ML><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{topEffects.map(([eid,count])=>{const e=EFFECTS_LIST.find(x=>x.id===eid);return e?<span key={eid} style={{fontSize:9,padding:"4px 10px",borderRadius:12,background:`${accent}12`,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{e.emoji} {e.label} ×{count}</span>:null})}</div></Glass>}
         <ML>All Sessions</ML>
+        <Btn secondary onClick={()=>{haptic.tap();setShowCard(true)}} style={{marginBottom:12}}>✨ View Trading Card</Btn>
+        {showCard&&<StrainTradingCard data={data} accent={accent} onClose={()=>setShowCard(false)} />}
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {sessions.map(s=>{const z=getZone(s.finalTempF||500);return(
             <Glass key={s.id} onClick={()=>{onClose();setTimeout(()=>onSelect(s),100)}} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2369,14 +2775,15 @@ function StrainDetailModal({strainKey,strainMap,accent,onClose,onSelect}) {
 // ═══════════════════════════════════════════════════════
 function DetailModal({item,accent,onClose,onDelete,onRepeat,onShare,onEdit}) {
   const z=getZone(item.finalTempF||500);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.96)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
       <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
-        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
         {item.photo&&<div style={{width:"100%",height:180,borderRadius:18,overflow:"hidden",marginBottom:14}}><img src={item.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
         <Glass style={{marginBottom:14}}><div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{item.brand}</div><div style={{fontSize:22,fontWeight:500,marginTop:4}}>{item.strain}</div><div style={{display:"flex",gap:8,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{item.classification}</span><span style={{color:"rgba(255,255,255,0.15)"}}>·</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{item.type}</span></div></Glass>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-          <Glass><ML>Temperature</ML><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:10,height:10,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:13,fontWeight:600}}>{z.name}</span></div>{item.finalTempF&&<div style={{fontSize:20,fontWeight:200,fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{item.finalTempF}°F</div>}</Glass>
+          <Glass><ML>Temperature</ML><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:10,height:10,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:13,fontWeight:600}}>{item.heatProfileName||z.name}</span></div>{item.finalTempF&&<div style={{fontSize:20,fontWeight:200,fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{item.finalTempF}°F</div>}</Glass>
           <Glass><ML>Duration</ML><div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)"}}>{item.duration>0?`${Math.floor(item.duration/60)}m ${item.duration%60}s`:"—"}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:6}}>{item.date} · {item.timeOfDay}</div></Glass>
         </div>
         <Glass style={{marginBottom:14}}><ML>Ratings</ML>{[{k:"vapor",l:"Vapor"},{k:"taste",l:"Taste"},{k:"potency",l:"Potency"},{k:"rating",l:"Overall"}].map(m=><div key={m.k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace",width:60}}>{m.l}</span><div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(s=><Leaf key={s} size={12} filled={s<=(item[m.k]||0)} accent={accent}/>)}</div></div>)}</Glass>
@@ -2389,7 +2796,14 @@ function DetailModal({item,accent,onClose,onDelete,onRepeat,onShare,onEdit}) {
           <Btn accent={accent} onClick={()=>onRepeat(item)}>🔄 Repeat This Sesh</Btn>
           <Btn secondary onClick={()=>onEdit(item)}>✎ Edit Session</Btn>
           <Btn secondary onClick={()=>onShare(item)}>📤 Share Card</Btn>
-          <Btn secondary onClick={()=>{if(confirm("Delete this session?"))onDelete(item.id)}} style={{color:"#ef4444"}}>Delete</Btn>
+          {confirmDelete ? (
+            <div style={{display:"flex",gap:8}}>
+              <Btn secondary onClick={()=>setConfirmDelete(false)} style={{flex:1}}>Cancel</Btn>
+              <Btn secondary onClick={()=>onDelete(item.id)} style={{flex:1,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"}}>Confirm Delete</Btn>
+            </div>
+          ) : (
+            <Btn secondary onClick={()=>setConfirmDelete(true)} style={{color:"#ef4444"}}>Delete</Btn>
+          )}
         </div>
       </div>
     </div>
@@ -2445,7 +2859,7 @@ function ShareCard({item,accent,onClose}) {
           </div>
         </div>
         <div style={{display:"flex",gap:10,marginTop:16}}>
-          <Btn accent={accent} onClick={download} style={{flex:1}}>{navigator.share?"📤 Share":"💾 Save"}</Btn>
+          <Btn accent={accent} onClick={download} style={{flex:1}}>{navigator.share?"Share":"Save"}</Btn>
           <Btn secondary onClick={onClose} style={{flex:"0 0 80px"}}>Close</Btn>
         </div>
       </div>
