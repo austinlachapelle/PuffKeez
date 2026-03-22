@@ -10,7 +10,6 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="/manifest.json" />
   <title>Puffco Companion</title>
-  <style>html, body { margin: 0; padding: 0; background: #04040c; height: 100%; overflow: hidden; } #root { height: 100%; }</style>
 </head>
 <body>
   <div id="root"></div>
@@ -882,7 +881,7 @@ function PuffcoCompanion() {
   }
 
   return (
-    <div style={{height:"100vh",background:"#04040c",color:accent,fontFamily:"'Syne','Helvetica Neue',sans-serif",overflow:"hidden",position:"relative"}}>
+    <div style={{minHeight:"100vh",background:"#04040c",color:accent,fontFamily:"'Syne','Helvetica Neue',sans-serif",position:"relative"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
         @keyframes twinkle{0%,100%{opacity:0.15}50%{opacity:0.7}}
@@ -892,8 +891,6 @@ function PuffcoCompanion() {
         @keyframes breathe{0%,100%{box-shadow:0 0 16px rgba(108,92,231,0.08)}50%{box-shadow:0 0 32px rgba(108,92,231,0.18)}}
         @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
         *{margin:0;padding:0;box-sizing:border-box}
-        html,body{height:100%;overflow:hidden;background:#04040c}
-        body{padding:0}
         ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
         .fu{}.fu1{}.fu2{}.fu3{}.fu4{}
         input::placeholder,textarea::placeholder{color:rgba(255,255,255,0.2)}input:focus,textarea:focus{border-color:rgba(255,255,255,0.15)!important}
@@ -932,9 +929,9 @@ function PuffcoCompanion() {
       {/* Session Overlay */}
       {sessionActive && <SessionOverlay sessionPhase={sessionPhase} setSessionPhase={setSessionPhase} sessionData={sessionData} setSessionData={setSessionData} ratingData={ratingData} setRatingData={setRatingData} selectedTempF={selectedTempF} setSelectedTempF={setSelectedTempF} timeLeft={timeLeft} setTimeLeft={setTimeLeft} totalDuration={totalDuration} boosts={boosts} setBoosts={setBoosts} isPaused={isPaused} setIsPaused={setIsPaused} accent={accent} heatProfiles={heatProfiles} activeHP={activeHP} completeSession={completeSession} onClose={resetSession} photoRef={photoRef} knownBrands={[...new Set(stash.map(s=>s.brand).filter(Boolean))].sort()} knownStrains={[...new Set(stash.map(s=>s.strain).filter(Boolean))].sort()} stash={stash} />}
 
-      <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",height:"100%",display:"flex",flexDirection:"column",padding:"0 18px"}}>
+      <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",padding:"0 18px"}}>
         {/* Header */}
-        <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 0 14px",flexShrink:0}}>
+        <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 0 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div>
               <div style={{fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Puffco</div>
@@ -950,7 +947,7 @@ function PuffcoCompanion() {
           </div>
         </header>
 
-        <div ref={scrollRef} style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",paddingBottom:140}}>
+        <div ref={scrollRef} style={{flex:1,paddingBottom:160}}>
 
           {/* ─── STASH TAB ─── */}
           {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} />}
@@ -969,13 +966,11 @@ function PuffcoCompanion() {
         </div>
       </div>
 
-      {/* Bottom Nav — OUTSIDE scroll container, always visible */}
-      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,paddingBottom:"env(safe-area-inset-bottom, 0px)",background:"#04040c"}}>
-        <div style={{padding:"8px 18px 8px",background:"linear-gradient(to top, #04040c 80%, transparent)"}}>
-        <div style={{maxWidth:440,margin:"0 auto"}}>
+      {/* Bottom Nav */}
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:440,padding:"10px 18px 18px",zIndex:50}}>
           <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",background:"rgba(8,8,20,0.95)",borderRadius:18,padding:"6px 0",border:"1px solid rgba(255,255,255,0.05)"}}>
-            <NavItem icon="📋" label="Stash" active={tab==="stash"} onClick={()=>switchTab("stash")} accent={accent} accentGrad={accentGrad} />
-            <NavItem icon="📊" label="Stats" active={tab==="stats"} onClick={()=>switchTab("stats")} accent={accent} accentGrad={accentGrad} />
+            <NavItem icon="◈" label="Stash" active={tab==="stash"} onClick={()=>switchTab("stash")} accent={accent} accentGrad={accentGrad} />
+            <NavItem icon="◷" label="Stats" active={tab==="stats"} onClick={()=>switchTab("stats")} accent={accent} accentGrad={accentGrad} />
             <div style={{position:"relative",top:-22}}>
               <button onClick={()=>{setSessionActive(true);setSessionPhase("details");setSelectedTempF(activeHP.tempF)}} style={{position:"relative",zIndex:2,width:52,height:52,borderRadius:"50%",background:accent2?`radial-gradient(circle at 45% 40%,${accent}20,${accent2}10,rgba(4,4,12,0.92))`:`radial-gradient(circle at 45% 40%,${accent}15,rgba(4,4,12,0.92))`,border:`1.5px solid ${accent}35`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:accent2?`0 0 20px ${accent}25, 0 0 40px ${accent2}15,inset 0 1px 0 rgba(255,255,255,0.06)`:`0 0 20px ${accent}25,inset 0 1px 0 rgba(255,255,255,0.06)`,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}><FlameIcon size={30} accent={accent}/></button>
             </div>
@@ -992,11 +987,9 @@ function PuffcoCompanion() {
                 {tab==="profile"&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accent}}/>}
               </button>
             ) : (
-              <NavItem icon="👤" label="Profile" active={tab==="profile"} onClick={()=>switchTab("profile")} accent={accent} accentGrad={accentGrad} />
+              <NavItem icon="◉" label="Profile" active={tab==="profile"} onClick={()=>switchTab("profile")} accent={accent} accentGrad={accentGrad} />
             )}
           </div>
-        </div>
-        </div>
       </div>
 
       {/* Session Detail Modal */}
