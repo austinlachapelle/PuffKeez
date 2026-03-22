@@ -1614,7 +1614,7 @@ function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashS
             <button onClick={()=>setViewMode("list")} style={{padding:"8px 12px",background:viewMode==="list"?`${accent}20`:"transparent",border:"none",color:viewMode==="list"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>☰</button>
             <button onClick={()=>setViewMode("shelf")} style={{padding:"8px 12px",background:viewMode==="shelf"?`${accent}20`:"transparent",border:"none",color:viewMode==="shelf"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>⊞</button>
           </div>
-          {Object.keys(strainMap).length>0&&<button onClick={()=>switchTab("encyclopedia")} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>Encyclopedia →</button>}
+          {Object.keys(strainMap).length>0&&<button onClick={()=>setTab("encyclopedia")} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>Encyclopedia →</button>}
         </div>
       </div>
 
@@ -1684,7 +1684,7 @@ function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashS
 // ═══════════════════════════════════════════════════════
 function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
   const tempCounts=stash.reduce((a,s)=>{const z=getZone(s.finalTempF||500).name;a[z]=(a[z]||0)+1;return a},{});
-  if(!stash.length) return <div style={{textAlign:"center",padding:"60px 0"}}><div style={{fontSize:44,opacity:0.15,marginBottom:12}}>📊</div><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>No sessions yet</p></div>;
+  const hasData = stash.length > 0;
   return (
     <div>
       <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Stats</h2></div>
@@ -1696,24 +1696,29 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
         {lvl.next&&<div><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{lvl.progressXP}/{lvl.neededXP} XP</span><span style={{fontSize:8,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>Next: {lvl.next.title}</span></div><div style={{height:8,borderRadius:4,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}><div style={{height:"100%",borderRadius:4,width:`${lvl.progress*100}%`,background:accent,transition:"width 1s"}}/></div></div>}
       </Glass>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-        {[{l:"Sessions",v:stash.length},{l:"Streak",v:streak+"d"},{l:"Avg Rating",v:avg("rating")!=="—"?avg("rating")+"★":"—"},{l:"Time",v:Math.floor(stash.reduce((a,b)=>a+(b.duration||0),0)/60)+"m"}].map((s,i)=><Glass key={i} style={{padding:16}}><div style={{fontSize:20,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{s.l}</div></Glass>)}
+        {[
+          {l:"Sessions",v:hasData?stash.length:"0"},
+          {l:"Streak",v:hasData?streak+"d":"0d"},
+          {l:"Avg Rating",v:hasData&&avg("rating")!=="—"?avg("rating")+"★":"N/A"},
+          {l:"Time",v:hasData?Math.floor(stash.reduce((a,b)=>a+(b.duration||0),0)/60)+"m":"0m"},
+        ].map((s,i)=><Glass key={i} style={{padding:16}}><div style={{fontSize:20,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{s.l}</div></Glass>)}
       </div>
-      <Glass style={{marginBottom:14}}><ML>Temp Distribution</ML><div style={{display:"flex",alignItems:"flex-end",gap:8,height:70,marginTop:10}}>{HEAT_ZONES.map(z=>{const c=tempCounts[z.name]||0;const mx=Math.max(...Object.values(tempCounts),1);return <div key={z.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{c}</span><div style={{width:"100%",height:`${(c/mx)*50}px`,borderRadius:5,background:`linear-gradient(to top,${z.hex}40,${z.hex}10)`,border:`1px solid ${z.hex}20`}}/><div style={{width:7,height:7,borderRadius:"50%",background:z.hex}}/></div>})}</div></Glass>
+      <Glass style={{marginBottom:14}}><ML>Temp Distribution</ML><div style={{display:"flex",alignItems:"flex-end",gap:8,height:70,marginTop:10}}>{HEAT_ZONES.map(z=>{const c=tempCounts[z.name]||0;const mx=Math.max(...Object.values(tempCounts),1);return <div key={z.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{c}</span><div style={{width:"100%",height:`${hasData?(c/mx)*50:0}px`,borderRadius:5,background:`linear-gradient(to top,${z.hex}40,${z.hex}10)`,border:`1px solid ${z.hex}20`}}/><div style={{width:7,height:7,borderRadius:"50%",background:z.hex}}/></div>})}</div></Glass>
       <Glass style={{marginBottom:14}}><ML>Achievements · {unlocked.length}/{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).length}</ML><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).map(a=>{const earned=a.check(stash);return <div key={a.id} title={a.title} style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:earned?`${accent}15`:"rgba(255,255,255,0.02)",border:`1px solid ${earned?accent+"40":"rgba(255,255,255,0.05)"}`,fontSize:18,opacity:earned?1:0.3}}>{a.secret&&!earned?"❓":a.emoji}</div>})}</div></Glass>
 
       {/* Potency Prediction */}
-      {stash.length>=5&&(()=>{
-        const brands={};
-        stash.forEach(s=>{if(s.brand&&s.rating>0){if(!brands[s.brand])brands[s.brand]={total:0,count:0,strains:new Set()};brands[s.brand].total+=s.rating;brands[s.brand].count++;brands[s.brand].strains.add(s.strain)}});
-        const ranked=Object.entries(brands).filter(([,v])=>v.count>=2).map(([name,v])=>({name,avg:(v.total/v.count).toFixed(1),count:v.count,strains:v.strains.size})).sort((a,b)=>b.avg-a.avg).slice(0,3);
-        if(!ranked.length)return null;
-        // Find best temp zone
-        const zoneRatings={};
-        stash.forEach(s=>{if(s.rating>0){const z=getZone(s.finalTempF||500).name;if(!zoneRatings[z])zoneRatings[z]={total:0,count:0};zoneRatings[z].total+=s.rating;zoneRatings[z].count++}});
-        const bestZone=Object.entries(zoneRatings).map(([n,v])=>({name:n,avg:v.total/v.count})).sort((a,b)=>b.avg-a.avg)[0];
-        return(
-          <Glass style={{marginBottom:14}}>
-            <ML>Potency Prediction</ML>
+      <Glass style={{marginBottom:14}}>
+        <ML>Potency Prediction</ML>
+        {(()=>{
+          if(stash.length<5) return <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Log 5+ sessions to unlock predictions</p>;
+          const brands={};
+          stash.forEach(s=>{if(s.brand&&s.rating>0){if(!brands[s.brand])brands[s.brand]={total:0,count:0,strains:new Set()};brands[s.brand].total+=s.rating;brands[s.brand].count++;brands[s.brand].strains.add(s.strain)}});
+          const ranked=Object.entries(brands).filter(([,v])=>v.count>=2).map(([name,v])=>({name,avg:(v.total/v.count).toFixed(1),count:v.count,strains:v.strains.size})).sort((a,b)=>b.avg-a.avg).slice(0,3);
+          if(!ranked.length) return <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Need more rated sessions to predict</p>;
+          const zoneRatings={};
+          stash.forEach(s=>{if(s.rating>0){const z=getZone(s.finalTempF||500).name;if(!zoneRatings[z])zoneRatings[z]={total:0,count:0};zoneRatings[z].total+=s.rating;zoneRatings[z].count++}});
+          const bestZone=Object.entries(zoneRatings).map(([n,v])=>({name:n,avg:v.total/v.count})).sort((a,b)=>b.avg-a.avg)[0];
+          return <>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5,marginBottom:12}}>Based on your {stash.length} sessions, here's what hits hardest:</p>
             {ranked.map((b,i)=>(
               <div key={b.name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<ranked.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
@@ -1727,33 +1732,32 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
               <span style={{fontSize:10,fontWeight:600}}>{bestZone.name}</span>
               <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}> zone — avg {bestZone.avg.toFixed(1)}★</span>
             </div>}
-          </Glass>
-        );
-      })()}
+          </>;
+        })()}
+      </Glass>
 
       {/* Constellation Map */}
-      {stash.length>=3&&(()=>{
-        const strains={};
-        stash.forEach(s=>{
-          const key=`${s.brand}|||${s.strain}`;
-          if(!strains[key])strains[key]={brand:s.brand,strain:s.strain,count:0,avgRating:0,total:0,type:s.type};
-          strains[key].count++;strains[key].total+=(s.rating||0);
-        });
-        const stars=Object.values(strains).map(s=>({...s,avgRating:s.count>0?s.total/s.count:0}));
-        if(stars.length<3)return null;
-        // Position each star using a seeded hash for consistent placement
-        const hash=(str)=>{let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0}return h};
-        const positioned=stars.map(s=>{
-          const h1=hash(s.brand+s.strain);const h2=hash(s.strain+s.brand);
-          return{...s,x:15+Math.abs(h1%280),y:15+Math.abs(h2%170),size:Math.max(2,Math.min(6,s.count*1.5+s.avgRating*0.5))};
-        });
-        // Draw lines between same-brand strains
-        const brandGroups={};positioned.forEach(s=>{if(!brandGroups[s.brand])brandGroups[s.brand]=[];brandGroups[s.brand].push(s)});
-        const lines=[];
-        Object.values(brandGroups).forEach(group=>{for(let i=0;i<group.length-1;i++)lines.push({x1:group[i].x,y1:group[i].y,x2:group[i+1].x,y2:group[i+1].y})});
-        return(
-          <Glass style={{marginBottom:14}}>
-            <ML>Strain Constellation</ML>
+      <Glass style={{marginBottom:14}}>
+        <ML>Strain Constellation</ML>
+        {(()=>{
+          if(stash.length<3) return <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Log 3+ unique strains to map your constellation</p>;
+          const strains={};
+          stash.forEach(s=>{
+            const key=`${s.brand}|||${s.strain}`;
+            if(!strains[key])strains[key]={brand:s.brand,strain:s.strain,count:0,avgRating:0,total:0,type:s.type};
+            strains[key].count++;strains[key].total+=(s.rating||0);
+          });
+          const stars=Object.values(strains).map(s=>({...s,avgRating:s.count>0?s.total/s.count:0}));
+          if(stars.length<3) return <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Log 3+ unique strains to map your constellation</p>;
+          const hash=(str)=>{let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0}return h};
+          const positioned=stars.map(s=>{
+            const h1=hash(s.brand+s.strain);const h2=hash(s.strain+s.brand);
+            return{...s,x:15+Math.abs(h1%280),y:15+Math.abs(h2%170),size:Math.max(2,Math.min(6,s.count*1.5+s.avgRating*0.5))};
+          });
+          const brandGroups={};positioned.forEach(s=>{if(!brandGroups[s.brand])brandGroups[s.brand]=[];brandGroups[s.brand].push(s)});
+          const lines=[];
+          Object.values(brandGroups).forEach(group=>{for(let i=0;i<group.length-1;i++)lines.push({x1:group[i].x,y1:group[i].y,x2:group[i+1].x,y2:group[i+1].y})});
+          return <>
             <p style={{fontSize:9,color:"rgba(255,255,255,0.25)",marginBottom:8}}>Each star is a strain. Lines connect same brand. Bigger = more sessions.</p>
             <svg viewBox="0 0 310 200" style={{width:"100%",height:"auto"}}>
               {lines.map((l,i)=><line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={accent} strokeWidth="0.5" opacity="0.2"/>)}
@@ -1765,9 +1769,9 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
                 </g>
               ))}
             </svg>
-          </Glass>
-        );
-      })()}
+          </>;
+        })()}
+      </Glass>
     </div>
   );
 }
@@ -2273,7 +2277,7 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
     <div>
       <div className="fu fu1" style={{padding:"22px 0 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
         <div><h2 style={{fontSize:20,fontWeight:600}}>Strain Encyclopedia</h2><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>{allEntries.length} unique strain{allEntries.length!==1?"s":""}</p></div>
-        <button onClick={()=>switchTab("stash")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}}>← Back</button>
+        <button onClick={()=>setTab("stash")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}}>← Back</button>
       </div>
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
