@@ -1,0 +1,2462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#04040c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Puffco" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>Puffco Companion</title>
+  <style>html, body { margin: 0; padding: 0; background: #04040c; height: 100%; overflow: hidden; } #root { height: 100%; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script type="text/babel" data-type="module">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// ═══════════════════════════════════════════════════════
+// PUFFCO COMPANION v3.1 — Deep Space Noir Edition
+// Features: Onboarding, Repeat Last, Profile Stats, Strain
+// Encyclopedia, Session Photos, Custom Heat Profiles,
+// Export Shareable Card
+// ═══════════════════════════════════════════════════════
+
+const APP_VERSION = "3.1.0";
+function ls(key, fb) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
+function lsSet(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
+
+// ─── Persistent Storage (localStorage) ──────────
+async function storageGet(key, fb) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fb;
+  } catch {
+    return fb;
+  }
+}
+async function storageSet(key, v) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {}
+}
+
+// ─── Data Constants ────────────────────────────────────
+const DEFAULT_PROFILES = [
+  { id:1, name:"Low & Slow", tempF:490, time:75, color:"#3b82f6" },
+  { id:2, name:"Cloud Chaser", tempF:510, time:60, color:"#22c55e" },
+  { id:3, name:"Terp Town", tempF:490, time:80, color:"#FDCB6E" },
+  { id:4, name:"Blastoff", tempF:530, time:45, color:"#ef4444" },
+];
+const HEAT_ZONES = [
+  { name:"Blue", min:400, max:499, hex:"#3b82f6" },
+  { name:"Green", min:500, max:529, hex:"#22c55e" },
+  { name:"Red", min:530, max:579, hex:"#ef4444" },
+  { name:"White", min:580, max:650, hex:"#ffffff" },
+];
+function getZone(f) { return HEAT_ZONES.find(z => f >= z.min && f <= z.max) || HEAT_ZONES[0]; }
+
+const EXTRACT_TYPES = ["Resin","Live Resin","Rosin","Live Rosin","Hash Rosin","Live Hash Rosin","Rosin Budder","Live Rosin Budder","Hash Rosin Budder","Live Hash Rosin Budder","Shatter","BHO","Dry Sift","Ice Hash","Bubble Hash","Temple Hash","Diamonds","Diamonds And Sugar","Honeycomb","Wax","Budder","Crumble","Sauce","Distillate"];
+const TEMP_SUGGESTIONS = {"Live Rosin":510,"Hash Rosin":510,"Rosin":510,"Bubble Hash":490,"Ice Hash":490,"Dry Sift":490,"Live Resin":510,"BHO":530,"Shatter":530,"Diamonds":530};
+const EFFECTS_LIST = [
+  {id:"relaxed",emoji:"😌",label:"Relaxed"},{id:"creative",emoji:"🎨",label:"Creative"},{id:"focused",emoji:"🎯",label:"Focused"},
+  {id:"euphoric",emoji:"✨",label:"Euphoric"},{id:"sleepy",emoji:"😴",label:"Sleepy"},{id:"hungry",emoji:"🍕",label:"Hungry"},
+  {id:"social",emoji:"💬",label:"Social"},{id:"couch",emoji:"🛋️",label:"Couch Lock"},{id:"giggly",emoji:"😂",label:"Giggly"},
+  {id:"energized",emoji:"⚡",label:"Energized"},{id:"pain_relief",emoji:"💊",label:"Pain Relief"},{id:"hazy",emoji:"🌫️",label:"Hazy"},
+];
+const FLAVORS = [
+  "Citrus","Gas","Earthy","Pine","Berry","Sweet","Floral","Spicy","Cheese","Tropical","Grape","Mint","Diesel","Skunky","Vanilla","Herbal","Nutty","Peppery",
+];
+const ACHIEVEMENTS = [
+  {id:"first_dab",emoji:"🔥",title:"First Dab",desc:"Log your first session",check:s=>s.length>=1},
+  {id:"ten_dabs",emoji:"💨",title:"Cloud Chaser",desc:"Log 10 sessions",check:s=>s.length>=10},
+  {id:"fifty_dabs",emoji:"🏆",title:"Dab Veteran",desc:"Log 50 sessions",check:s=>s.length>=50},
+  // Session Milestones
+  {id:"century",emoji:"💯",title:"The Century",desc:"Log 100 sessions",check:s=>s.length>=100},
+  {id:"five_hundo",emoji:"🏅",title:"Five Hundo",desc:"Log 500 sessions",check:s=>s.length>=500},
+  {id:"thousand",emoji:"👑",title:"The Thousand",desc:"Log 1,000 sessions",check:s=>s.length>=1000},
+  {id:"all_temps",emoji:"🌡️",title:"Temp Explorer",desc:"Use all 4 heat zones",check:s=>new Set(s.map(x=>getZone(x.finalTempF||500).name)).size>=4},
+  {id:"five_star",emoji:"⭐",title:"High Standards",desc:"Rate a session 5 stars",check:s=>s.some(x=>x.rating===5)},
+  {id:"rosin_fan",emoji:"🧇",title:"Rosin Head",desc:"Log 10 rosin sessions",check:s=>s.filter(x=>x.type?.toLowerCase().includes("rosin")).length>=10},
+  {id:"five_brands",emoji:"🏷️",title:"Brand Hopper",desc:"Try 5 different brands",check:s=>new Set(s.map(x=>x.brand).filter(Boolean)).size>=5},
+  {id:"effects_log",emoji:"📓",title:"Effect Tracker",desc:"Log effects on a session",check:s=>s.some(x=>x.effects?.length>0)},
+  {id:"photo_log",emoji:"📸",title:"Shutterbug",desc:"Add a photo to a session",check:s=>s.some(x=>x.photo)},
+  // Collection Milestones
+  {id:"strain_10",emoji:"🌿",title:"Strain Sampler",desc:"Try 10 unique strains",check:s=>new Set(s.map(x=>`${x.brand}-${x.strain}`)).size>=10},
+  {id:"strain_25",emoji:"🌱",title:"Strain Collector",desc:"Try 25 unique strains",check:s=>new Set(s.map(x=>`${x.brand}-${x.strain}`)).size>=25},
+  {id:"strain_50",emoji:"🍀",title:"Strain Connoisseur",desc:"Try 50 unique strains",check:s=>new Set(s.map(x=>`${x.brand}-${x.strain}`)).size>=50},
+  {id:"strain_100",emoji:"🌳",title:"Strain Legend",desc:"Try 100 unique strains",check:s=>new Set(s.map(x=>`${x.brand}-${x.strain}`)).size>=100},
+  {id:"secret_marathon",emoji:"🏃",title:"Marathon Dabber",desc:"Log 5 sessions in one day",check:s=>{const d={};s.forEach(x=>{d[x.date]=(d[x.date]||0)+1});return Object.values(d).some(c=>c>=5)},secret:true},
+  {id:"secret_triple_5",emoji:"💫",title:"Triple Threat",desc:"All sub-ratings at 5",check:s=>s.some(x=>x.vapor===5&&x.taste===5&&x.potency===5),secret:true},
+];
+const LEVELS = [
+  {level:1,title:"Newbie",xp:0,emoji:"🌱",frame:"none"},
+  {level:2,title:"Apprentice",xp:100,emoji:"🔥",frame:"thin-ring"},
+  {level:3,title:"Terp Taster",xp:300,emoji:"👃",frame:"dashed"},
+  {level:4,title:"Cloud Chaser",xp:600,emoji:"💨",frame:"double-ring"},
+  {level:5,title:"Flavor Hunter",xp:1000,emoji:"🎯",frame:"glow-pulse"},
+  {level:6,title:"Terp Chaser",xp:1500,emoji:"🌿",frame:"leaf-ring"},
+  {level:7,title:"Dab Scientist",xp:2200,emoji:"🔬",frame:"hex"},
+  {level:8,title:"Rosin Head",xp:3000,emoji:"🧇",frame:"flame-ring"},
+  {level:9,title:"Hash Master",xp:4000,emoji:"👑",frame:"crown"},
+  {level:10,title:"Connoisseur",xp:5500,emoji:"💎",frame:"diamond"},
+  {level:11,title:"Extract Elder",xp:7500,emoji:"🏛️",frame:"ornate"},
+  {level:12,title:"Dab God",xp:10000,emoji:"⚡",frame:"legendary"},
+];
+
+// ─── PFP Frame SVG Component ──────────────────────────
+function PfpFrame({ frameId, size = 72, accent = "#6C5CE7" }) {
+  if (!frameId || frameId === "none") return null;
+  const s = size, pad = Math.round(s * 0.22), full = s + pad * 2;
+  const cx = full / 2, cy = full / 2;
+  const ri = s / 2 + 1; // inner radius (just outside avatar)
+  const ro = s / 2 + pad * 0.85; // outer radius
+  const style = { position: "absolute", top: -pad, left: -pad, pointerEvents: "none" };
+  const deg2rad = d => d * Math.PI / 180;
+  const polar = (angle, radius) => [cx + radius * Math.cos(deg2rad(angle - 90)), cy + radius * Math.sin(deg2rad(angle - 90))];
+
+  const frames = {
+    // Lv2: Thin geometric octagon
+    "thin-ring": (() => {
+      const pts = Array.from({length:8},(_,i)=>polar(i*45, ro)).map(p=>p.join(",")).join(" ");
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <polygon points={pts} fill="none" stroke={accent} strokeWidth="1.2" opacity="0.5" strokeLinejoin="round"/>
+      </svg>;
+    })(),
+
+    // Lv3: Double-stroke rounded square with corner notches
+    "dashed": (() => {
+      const r2 = ro * 0.92, inset = pad * 0.4, corner = pad * 0.5;
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <rect x={cx-r2} y={cy-r2} width={r2*2} height={r2*2} rx={corner} fill="none" stroke={accent} strokeWidth="1.5" opacity="0.5"/>
+        <rect x={cx-ri} y={cy-ri} width={ri*2} height={ri*2} rx={corner*0.7} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.25"/>
+        {[[-1,-1],[1,-1],[1,1],[-1,1]].map(([dx,dy],i)=><circle key={i} cx={cx+dx*(r2-2)} cy={cy+dy*(r2-2)} r="1.5" fill={accent} opacity="0.4"/>)}
+      </svg>;
+    })(),
+
+    // Lv4: Stacked chevrons pointing outward — angular energy
+    "double-ring": (() => {
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <circle cx={cx} cy={cy} r={ri+1} fill="none" stroke={accent} strokeWidth="1" opacity="0.3"/>
+        {[0,45,90,135,180,225,270,315].map(deg => {
+          const a = deg2rad(deg-90);
+          const mx = cx + (ro-2) * Math.cos(a), my = cy + (ro-2) * Math.sin(a);
+          const perpA = a + Math.PI/2;
+          const tipA = a;
+          const w = pad*0.25;
+          const pts = [
+            [mx - w*Math.cos(perpA), my - w*Math.sin(perpA)],
+            [mx + pad*0.35*Math.cos(tipA), my + pad*0.35*Math.sin(tipA)],
+            [mx + w*Math.cos(perpA), my + w*Math.sin(perpA)],
+          ].map(p=>p.join(",")).join(" ");
+          return <polygon key={deg} points={pts} fill={accent} opacity="0.4"/>;
+        })}
+      </svg>;
+    })(),
+
+    // Lv5: Spinning blade / shuriken shape
+    "glow-pulse": (() => {
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        {[0,60,120,180,240,300].map(deg => {
+          const a1 = deg2rad(deg-90), a2 = deg2rad(deg-90+25), a3 = deg2rad(deg-90-25);
+          const tip = polar(deg, ro+2);
+          const base1 = [cx + ri * Math.cos(a2), cy + ri * Math.sin(a2)];
+          const base2 = [cx + ri * Math.cos(a3), cy + ri * Math.sin(a3)];
+          return <polygon key={deg} points={`${tip[0]},${tip[1]} ${base1[0]},${base1[1]} ${base2[0]},${base2[1]}`} fill={accent} opacity="0.3"/>;
+        })}
+        <circle cx={cx} cy={cy} r={ri+1} fill="none" stroke={accent} strokeWidth="1.2" opacity="0.5"/>
+      </svg>;
+    })(),
+
+    // Lv6: Botanical — leaf shapes radiating from the ring
+    "leaf-ring": (() => {
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <circle cx={cx} cy={cy} r={ri+1} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.35"/>
+        {[0,36,72,108,144,180,216,252,288,324].map(deg => {
+          const a = deg2rad(deg-90);
+          const base = [cx+(ri+2)*Math.cos(a), cy+(ri+2)*Math.sin(a)];
+          const tip = [cx+(ro+1)*Math.cos(a), cy+(ro+1)*Math.sin(a)];
+          const perp = deg2rad(deg);
+          const w = pad*0.18;
+          const ctrl1 = [base[0]+w*Math.cos(perp)+(tip[0]-base[0])*0.4, base[1]+w*Math.sin(perp)+(tip[1]-base[1])*0.4];
+          const ctrl2 = [base[0]-w*Math.cos(perp)+(tip[0]-base[0])*0.4, base[1]-w*Math.sin(perp)+(tip[1]-base[1])*0.4];
+          return <path key={deg} d={`M${base[0]},${base[1]} Q${ctrl1[0]},${ctrl1[1]} ${tip[0]},${tip[1]} Q${ctrl2[0]},${ctrl2[1]} ${base[0]},${base[1]}Z`} fill={accent} opacity="0.35"/>;
+        })}
+      </svg>;
+    })(),
+
+    // Lv7: Hexagonal — your favorite. Clean hex with inner detail
+    "hex": (() => {
+      const outerPts = Array.from({length:6},(_,i)=>polar(i*60, ro)).map(p=>p.join(",")).join(" ");
+      const innerPts = Array.from({length:6},(_,i)=>polar(i*60, ri+2)).map(p=>p.join(",")).join(" ");
+      const midPts = Array.from({length:6},(_,i)=>polar(i*60+30, (ri+ro)/2)).map(p=>p.join(",")).join(" ");
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <polygon points={outerPts} fill="none" stroke={accent} strokeWidth="1.8" opacity="0.6" strokeLinejoin="round"/>
+        <polygon points={innerPts} fill="none" stroke={accent} strokeWidth="0.6" opacity="0.2" strokeLinejoin="round"/>
+        {Array.from({length:6},(_,i)=>{
+          const p1=polar(i*60,ri+2),p2=polar(i*60,ro);
+          return <line key={i} x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} stroke={accent} strokeWidth="0.5" opacity="0.2"/>;
+        })}
+        {Array.from({length:6},(_,i)=>{
+          const p=polar(i*60+30,(ri+ro)/2);
+          return <circle key={i} cx={p[0]} cy={p[1]} r={pad*0.08} fill={accent} opacity="0.4"/>;
+        })}
+      </svg>;
+    })(),
+
+    // Lv8: Flame corona — jagged flame tips around the ring
+    "flame-ring": (() => {
+      const count = 12;
+      let path = "";
+      for (let i = 0; i < count; i++) {
+        const deg = i * (360/count);
+        const innerP = polar(deg, ri+1);
+        const tipP = polar(deg + 360/count/2, ro + pad*0.15);
+        const nextInner = polar(deg + 360/count, ri+1);
+        path += `${i===0?"M":"L"}${innerP[0]},${innerP[1]} Q${polar(deg+360/count/4,ro*0.8)[0]},${polar(deg+360/count/4,ro*0.8)[1]} ${tipP[0]},${tipP[1]} Q${polar(deg+360/count*3/4,ro*0.8)[0]},${polar(deg+360/count*3/4,ro*0.8)[1]} ${nextInner[0]},${nextInner[1]} `;
+      }
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <path d={path+"Z"} fill={accent} opacity="0.15" stroke={accent} strokeWidth="1" strokeOpacity="0.5"/>
+      </svg>;
+    })(),
+
+    // Lv9: Royal crest — ornate pointed crown shape at top with flanking wings
+    "crown": (() => {
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <circle cx={cx} cy={cy} r={ri+1} fill="none" stroke={accent} strokeWidth="1.2" opacity="0.4"/>
+        {/* Crown points at top */}
+        {[-40,-20,0,20,40].map((offset,i)=>{
+          const p = polar(offset, ro + (i===2?pad*0.3:i===1||i===3?pad*0.15:0));
+          const base1 = polar(offset-8, ri+2);
+          const base2 = polar(offset+8, ri+2);
+          return <polygon key={i} points={`${p[0]},${p[1]} ${base1[0]},${base1[1]} ${base2[0]},${base2[1]}`} fill={accent} opacity={i===2?0.5:0.3}/>;
+        })}
+        {/* Gems at crown tips */}
+        {[-40,0,40].map((offset,i)=>{
+          const p = polar(offset, ro + (i===1?pad*0.3:0));
+          return <circle key={i} cx={p[0]} cy={p[1]} r={pad*0.07} fill={accent} opacity="0.7"/>;
+        })}
+        {/* Side filigree */}
+        {[130,230].map(deg=>{
+          const p = polar(deg, ro-1);
+          return <circle key={deg} cx={p[0]} cy={p[1]} r={pad*0.12} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.25"/>;
+        })}
+      </svg>;
+    })(),
+
+    // Lv10: Faceted gem — 12-sided polygon with inner facet lines creating diamond cuts
+    "diamond": (() => {
+      const outerPts = Array.from({length:12},(_,i)=>polar(i*30, ro));
+      const innerPts = Array.from({length:12},(_,i)=>polar(i*30+15, (ri+ro)/2*0.95));
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <polygon points={outerPts.map(p=>p.join(",")).join(" ")} fill="none" stroke={accent} strokeWidth="1.5" opacity="0.5" strokeLinejoin="round"/>
+        {outerPts.map((p,i)=>{
+          const next = innerPts[i];
+          const prev = innerPts[(i+11)%12];
+          return <g key={i}>
+            <line x1={p[0]} y1={p[1]} x2={next[0]} y2={next[1]} stroke={accent} strokeWidth="0.6" opacity="0.25"/>
+            <line x1={p[0]} y1={p[1]} x2={prev[0]} y2={prev[1]} stroke={accent} strokeWidth="0.6" opacity="0.25"/>
+          </g>;
+        })}
+        <polygon points={innerPts.map(p=>p.join(",")).join(" ")} fill="none" stroke={accent} strokeWidth="0.5" opacity="0.15"/>
+      </svg>;
+    })(),
+
+    // Lv11: Sacred geometry — flower of life pattern around the ring
+    "ornate": (() => {
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        <circle cx={cx} cy={cy} r={ro} fill="none" stroke={accent} strokeWidth="1" opacity="0.3"/>
+        <circle cx={cx} cy={cy} r={ri+1} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.2"/>
+        {Array.from({length:6},(_,i)=>{
+          const p = polar(i*60, (ri+ro)/2);
+          const circR = (ro-ri)/2*0.9;
+          return <circle key={i} cx={p[0]} cy={p[1]} r={circR} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.3"/>;
+        })}
+        {Array.from({length:6},(_,i)=>{
+          const p = polar(i*60+30, (ri+ro)/2);
+          const circR = (ro-ri)/2*0.5;
+          return <circle key={`s${i}`} cx={p[0]} cy={p[1]} r={circR} fill={accent} opacity="0.12"/>;
+        })}
+        {Array.from({length:12},(_,i)=>{
+          const p = polar(i*30, ro);
+          return <circle key={`d${i}`} cx={p[0]} cy={p[1]} r={pad*0.04} fill={accent} opacity="0.5"/>;
+        })}
+      </svg>;
+    })(),
+
+    // Lv12: Legendary — complex layered mandala with radiating beams
+    "legendary": (() => {
+      const starOuter = Array.from({length:8},(_,i)=>{
+        const isSpike = i%2===0;
+        return polar(i*45, isSpike ? ro+pad*0.2 : (ri+ro)/2*0.95);
+      });
+      return <svg width={full} height={full} viewBox={`0 0 ${full} ${full}`} style={style}>
+        {/* Outer 8-point star */}
+        <polygon points={starOuter.map(p=>p.join(",")).join(" ")} fill={accent} opacity="0.08" stroke={accent} strokeWidth="1" strokeOpacity="0.4" strokeLinejoin="round"/>
+        {/* Inner hex */}
+        <polygon points={Array.from({length:6},(_,i)=>polar(i*60,ri+2)).map(p=>p.join(",")).join(" ")} fill="none" stroke={accent} strokeWidth="0.8" opacity="0.25" strokeLinejoin="round"/>
+        {/* Radiating beam lines */}
+        {Array.from({length:24},(_,i)=>{
+          const p1=polar(i*15,ri+1),p2=polar(i*15,i%3===0?ro+pad*0.15:ro-pad*0.05);
+          return <line key={i} x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} stroke={accent} strokeWidth={i%3===0?"0.8":"0.4"} opacity={i%3===0?0.35:0.12}/>;
+        })}
+        {/* Gem dots at cardinal spike tips */}
+        {[0,90,180,270].map(deg=>{
+          const p=polar(deg,ro+pad*0.2);
+          return <circle key={deg} cx={p[0]} cy={p[1]} r={pad*0.08} fill={accent} opacity="0.6"/>;
+        })}
+        {/* Ring of dots */}
+        {Array.from({length:12},(_,i)=>{
+          const p=polar(i*30,ro-pad*0.05);
+          return <circle key={`r${i}`} cx={p[0]} cy={p[1]} r={pad*0.035} fill={accent} opacity="0.3"/>;
+        })}
+      </svg>;
+    })(),
+  };
+  return frames[frameId] || null;
+}
+function calcXP(s){let x=0;const seen=new Set();s.forEach(e=>{x+=50;if(e.rating===5)x+=25;if(e.effects?.length)x+=10;if(e.notes?.trim())x+=10;if(e.photo)x+=15;const k=`${e.brand}-${e.strain}`;if(!seen.has(k)){seen.add(k);x+=30}});return x}
+function getLvl(xp){let c=LEVELS[0];for(const l of LEVELS){if(xp>=l.xp)c=l;else break}const ni=LEVELS.findIndex(l=>l.level===c.level)+1;const n=ni<LEVELS.length?LEVELS[ni]:null;return{...c,totalXP:xp,next:n,progress:n?Math.min((xp-c.xp)/(n.xp-c.xp),1):1,progressXP:n?xp-c.xp:0,neededXP:n?n.xp-c.xp:1}}
+function getStreak(s){if(!s.length)return 0;const d=[...new Set(s.map(x=>x.date))].sort((a,b)=>b.localeCompare(a));const t=new Date().toISOString().split("T")[0];let c=0;for(let i=0;i<d.length;i++){const e=new Date(t);e.setDate(e.getDate()-i);if(d[i]===e.toISOString().split("T")[0])c++;else break}return c}
+const FILTER_MAP = {
+  Rosin:["Rosin","Live Rosin","Hash Rosin","Live Hash Rosin","Rosin Budder","Live Rosin Budder","Hash Rosin Budder","Live Hash Rosin Budder"],
+  Hash:["Bubble Hash","Ice Hash","Dry Sift","Temple Hash"],
+  Resin:["Resin","Live Resin"],
+};
+
+// ─── Global flame interaction ──────────────────────────
+const flamePos = { x:0, y:0, active:false, intensity:0 };
+
+// ─── Smoke Background ──────────────────────────────────
+// CSS custom properties for instant accent switching.
+// Uses useRef to update CSS vars WITHOUT re-rendering the component,
+// so SVG filters and animations are never rebuilt.
+// ─── Smoke Background ──────────────────────────────────
+// Generates vertically-tileable smoke textures using canvas noise.
+// Accent color is baked directly into the texture pixels.
+// Regenerates textures when accent changes. After generation:
+// pure CSS translateY animation on pre-rendered images = zero lag.
+function SmokeBackground({ accent = "#6C5CE7", accent2 }) {
+  const containerRef = useRef(null);
+  const [textures, setTextures] = useState(null);
+  const noiseCache = useRef(null);
+
+  // Noise generation functions — cached so we only compute noise grids once
+  useEffect(() => {
+    const W = 128, H = 256;
+
+    function makeNoise(seed) {
+      const grid = [];
+      let s = seed;
+      const rand = () => { s = (s * 16807 + 0) % 2147483647; return (s & 0x7fffffff) / 2147483647; };
+      for (let i = 0; i < 4096; i++) grid.push(rand());
+      return (x, y) => {
+        const gw = 64;
+        const xi = ((Math.floor(x) % gw) + gw) % gw;
+        const yi = ((Math.floor(y) % gw) + gw) % gw;
+        const xf = x - Math.floor(x), yf = y - Math.floor(y);
+        const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+        const i00 = grid[(yi * gw + xi) % 4096];
+        const i10 = grid[(yi * gw + ((xi + 1) % gw)) % 4096];
+        const i01 = grid[(((yi + 1) % gw) * gw + xi) % 4096];
+        const i11 = grid[(((yi + 1) % gw) * gw + ((xi + 1) % gw)) % 4096];
+        return i00 * (1 - sx) * (1 - sy) + i10 * sx * (1 - sy) + i01 * (1 - sx) * sy + i11 * sx * sy;
+      };
+    }
+
+    function fbm(fn, x, y, oct) {
+      let v = 0, a = 1, f = 1, m = 0;
+      for (let i = 0; i < oct; i++) { v += fn(x * f, y * f) * a; m += a; a *= 0.5; f *= 2; }
+      return v / m;
+    }
+
+    // Pre-compute noise value arrays (heavy work, done once)
+    function computeNoiseField(seed) {
+      const n1 = makeNoise(seed), n2 = makeNoise(seed + 100);
+      const field = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          // Very low frequency = big soft billowy shapes
+          const nx = x / W * 3.5;
+          const ny = y / H * 5;
+          // Gentle domain warping
+          const wx = fbm(n2, nx + 3.3, ny + 1.7, 3) * 1.2;
+          const wy = fbm(n2, nx + 7.1, ny + 4.2, 3) * 1.2;
+          let v = fbm(n1, nx + wx, ny + wy, 3);
+
+          // Wide vertical tile zone — 40% on each end
+          const tileZone = 0.4;
+          const yNorm = y / H;
+          let tileFade = 1;
+          if (yNorm < tileZone) tileFade = yNorm / tileZone;
+          if (yNorm > 1 - tileZone) tileFade = (1 - yNorm) / tileZone;
+          tileFade = tileFade * tileFade * (3 - 2 * tileFade);
+
+          const xFade = 1 - Math.pow((x / W - 0.5) * 2, 4) * 0.3;
+          // Very soft power curve
+          v = Math.pow(v, 1.05) * tileFade * xFade;
+          field[y * W + x] = Math.max(0, Math.min(1, v));
+        }
+      }
+
+      // Single blur pass — lightweight
+      const blurred = new Float32Array(W * H);
+      const br = 3;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          let sum = 0, count = 0;
+          for (let dy = -br; dy <= br; dy++) {
+            for (let dx = -br; dx <= br; dx++) {
+              sum += field[Math.max(0,Math.min(H-1,y+dy)) * W + Math.max(0,Math.min(W-1,x+dx))];
+              count++;
+            }
+          }
+          blurred[y * W + x] = sum / count;
+        }
+      }
+      return blurred;
+    }
+
+    // Stagger texture generation to avoid blocking the main thread
+    setTimeout(() => {
+      const f1 = computeNoiseField(42);
+      setTimeout(() => {
+        const f2 = computeNoiseField(137);
+        setTimeout(() => {
+          const f3 = computeNoiseField(271);
+          noiseCache.current = { W, H, fields: [f1, f2, f3] };
+          renderTextures(accent, accent2);
+        }, 50);
+      }, 50);
+    }, 200);
+  }, []);
+
+  // Render textures with specific accent color — fast because noise is cached
+  function renderTextures(color1, color2) {
+    const cache = noiseCache.current;
+    if (!cache) return;
+    const { W, H, fields } = cache;
+    const r1 = parseInt(color1.slice(1, 3), 16);
+    const g1 = parseInt(color1.slice(3, 5), 16);
+    const b1 = parseInt(color1.slice(5, 7), 16);
+    const r2 = color2 ? parseInt(color2.slice(1, 3), 16) : r1;
+    const g2 = color2 ? parseInt(color2.slice(3, 5), 16) : g1;
+    const b2 = color2 ? parseInt(color2.slice(5, 7), 16) : b1;
+
+    // Each layer gets a different blend ratio: 0.0=color1, 1.0=color2
+    const blendRatios = [0.0, 0.5, 1.0];
+    const opacities = [0.3, 0.24, 0.18];
+    const result = fields.map((field, fi) => {
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      const ctx = c.getContext("2d");
+      const img = ctx.createImageData(W, H);
+      const op = opacities[fi];
+      const blend = blendRatios[fi];
+      const cr = Math.round(r1 + (r2 - r1) * blend);
+      const cg = Math.round(g1 + (g2 - g1) * blend);
+      const cb = Math.round(b1 + (b2 - b1) * blend);
+
+      for (let i = 0; i < W * H; i++) {
+        const v = field[i] * op;
+        const idx = i * 4;
+        img.data[idx] = cr;
+        img.data[idx + 1] = cg;
+        img.data[idx + 2] = cb;
+        img.data[idx + 3] = Math.round(v * 255);
+      }
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL();
+    });
+
+    setTextures(result);
+  }
+
+  // Regenerate textures when accent changes — only pixel coloring, noise is cached
+  const prevAccent = useRef(accent);
+  const prevAccent2 = useRef(accent2);
+  useEffect(() => {
+    if ((accent !== prevAccent.current || accent2 !== prevAccent2.current) && noiseCache.current) {
+      prevAccent.current = accent;
+      prevAccent2.current = accent2;
+      renderTextures(accent, accent2);
+    }
+  }, [accent, accent2]);
+
+  return (
+    <div ref={containerRef} style={{
+      position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
+      overflow: "hidden", background: "#04040c",
+    }}>
+      <style>{`
+        @keyframes sr1{0%{transform:translateY(0%) scale(1.08)}100%{transform:translateY(-33.333%) scale(1.08)}}
+        @keyframes sr2{0%{transform:translateY(0%) scale(1.11)}100%{transform:translateY(-33.333%) scale(1.11)}}
+        @keyframes sr3{0%{transform:translateY(0%) scale(1.14)}100%{transform:translateY(-33.333%) scale(1.14)}}
+        .sl{position:absolute;left:-8%;width:116%;will-change:transform;filter:blur(12px)}
+        .sl img{width:100%;height:33.334%;display:block}
+      `}</style>
+
+      {textures && <>
+        {/* 3 copies per layer = seam every 33%. Prime durations (53s, 41s, 31s)
+            mean the 3 layers' seams never coincide. One layer's seam is always
+            hidden by the other two layers' mid-texture regions. */}
+        <div className="sl" style={{top:0,height:"300%",animation:"sr1 53s linear infinite",opacity:0.7}}>
+          <img src={textures[0]} alt="" />
+          <img src={textures[0]} alt="" />
+          <img src={textures[0]} alt="" />
+        </div>
+        <div className="sl" style={{top:0,height:"300%",animation:"sr2 41s linear infinite",opacity:0.5,left:"-6%",width:"112%"}}>
+          <img src={textures[1]} alt="" />
+          <img src={textures[1]} alt="" />
+          <img src={textures[1]} alt="" />
+        </div>
+        <div className="sl" style={{top:0,height:"300%",animation:"sr3 31s linear infinite",opacity:0.35}}>
+          <img src={textures[2]} alt="" />
+          <img src={textures[2]} alt="" />
+          <img src={textures[2]} alt="" />
+        </div>
+      </>}
+
+      {/* Bottom glow — accent colored, blends both for ombré */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:"25%",background:accent2?`radial-gradient(ellipse 120% 100% at 30% 100%, ${accent}22 0%, transparent 60%), radial-gradient(ellipse 120% 100% at 70% 100%, ${accent2}22 0%, transparent 60%)`:`radial-gradient(ellipse 120% 100% at 50% 100%, ${accent}22 0%, ${accent}08 40%, transparent 75%)`}} />
+
+      {/* Top fade to black */}
+      <div style={{position:"absolute",top:0,left:0,right:0,height:"30%",background:"linear-gradient(to bottom, #04040c 0%, #04040cbb 35%, transparent 100%)"}} />
+
+      {/* Bottom edge blend */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:"8%",background:"linear-gradient(to top, #04040c, transparent)"}} />
+    </div>
+  );
+}
+
+// Starfield removed
+function Starfield() { return null; }
+
+// ─── Reusable Components ───────────────────────────────
+function Glass({children,style,onClick,glow,noPad}){return <div onClick={onClick} className="glass-panel" style={{background:"rgba(12,12,24,0.85)",border:`1px solid ${glow?glow+"30":"rgba(255,255,255,0.07)"}`,borderRadius:18,padding:noPad?0:20,boxShadow:glow?`0 2px 20px ${glow}10,inset 0 1px 0 rgba(255,255,255,0.06)`:"inset 0 1px 0 rgba(255,255,255,0.04)",cursor:onClick?"pointer":"default",WebkitTapHighlightColor:"transparent",...style}}>{children}</div>}
+function Leaf({size=13,filled,accent="#6C5CE7"}){
+  if(!filled) return <span style={{fontSize:size,display:"inline-block",opacity:0.15,userSelect:"none"}}>🍁</span>;
+  // Convert accent hex to approximate hue-rotate degree
+  const r=parseInt(accent.slice(1,3),16), g=parseInt(accent.slice(3,5),16), b=parseInt(accent.slice(5,7),16);
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h=0; if(max!==min){const d=max-min; if(max===r)h=((g-b)/d+(g<b?6:0))*60; else if(max===g)h=((b-r)/d+2)*60; else h=((r-g)/d+4)*60;}
+  // Emoji default hue is ~30deg (orange/red), so offset from that
+  const rot = h - 30;
+  return <span style={{fontSize:size,display:"inline-block",userSelect:"none",filter:`hue-rotate(${rot}deg) drop-shadow(0 0 3px ${accent})`}}>🍁</span>;
+}
+const ML=({children,style})=><div style={{fontSize:9,letterSpacing:2.5,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:10,...style}}>{children}</div>;
+const Input=({value,onChange,placeholder,style,type="text",rows,accept,onFileChange})=>{const base={width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",fontFamily:"'Syne','Helvetica Neue',sans-serif",transition:"border 0.3s",...style};if(rows)return <textarea rows={rows} value={value} onChange={onChange} placeholder={placeholder} style={{...base,resize:"none"}}/>;return <input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base} accept={accept}/>};
+const Btn=({children,onClick,accent,accentGrad,disabled,secondary,small,style})=><button onClick={onClick} disabled={disabled} style={{width:"100%",padding:small?"10px 0":secondary?"12px 0":"16px 0",borderRadius:14,border:secondary?"1.5px solid rgba(255,255,255,0.1)":"none",background:secondary?"transparent":disabled?"rgba(255,255,255,0.06)":(accentGrad||accent||"#6C5CE7"),color:secondary?"rgba(255,255,255,0.5)":disabled?"rgba(255,255,255,0.3)":"#000",fontSize:small?9:11,letterSpacing:3,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",cursor:disabled?"not-allowed":"pointer",WebkitTapHighlightColor:"transparent",...style}}>{children}</button>;
+function NavItem({icon,label,active,onClick,accent,accentGrad}){return <button onClick={onClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative",WebkitTapHighlightColor:"transparent"}}><div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>{active&&<div style={{position:"absolute",width:32,height:32,borderRadius:"50%",background:`${accent}18`}}/>}<span style={{fontSize:22,position:"relative",opacity:active?1:0.3}}>{icon}</span></div><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:active?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:active?600:400}}>{label}</span>{active&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accentGrad||accent}}/>}</button>}
+
+// ─── Flame Icon ────────────────────────────────────────
+function FlameIcon({size=28,accent="#6C5CE7",pulse=false}){return <svg viewBox="0 0 120 120" width={size} height={size}><defs><linearGradient id="fgO" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.95"/><stop offset="50%" stopColor={accent}/><stop offset="100%" stopColor="white" stopOpacity="0.7"/></linearGradient><linearGradient id="fgI" x1="0.5" y1="1" x2="0.5" y2="0"><stop offset="0%" stopColor={accent} stopOpacity="0.6"/><stop offset="100%" stopColor="white" stopOpacity="0.9"/></linearGradient></defs><path d="M60 8 C54 20,38 35,28 55 C18 75,20 95,35 105 C45 112,55 115,60 115 C65 115,75 112,85 105 C100 95,102 75,92 55 C82 35,66 20,60 8Z" fill="url(#fgO)" opacity="0.95"/><path d="M55 38 C50 50,40 62,38 78 C36 90,42 102,52 106 C58 108,64 106,68 100 C74 90,70 78,64 65 C60 55,57 45,55 38Z" fill="url(#fgI)" opacity="0.85"/><ellipse cx="54" cy="88" rx="6" ry="12" fill="white" opacity="0.5"/></svg>}
+
+// ─── Photo Compressor ──────────────────────────────────
+function compressPhoto(file, maxSize=512) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w=img.width, h=img.height;
+        if(w>h){if(w>maxSize){h=Math.round(h*maxSize/w);w=maxSize}}else{if(h>maxSize){w=Math.round(w*maxSize/h);h=maxSize}}
+        canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL("image/jpeg",0.75));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════
+function PuffcoCompanion() {
+  // ─── Feature #1: Onboarding ────────────────────────
+  const [onboarded, setOnboarded] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const [tab, setTabRaw] = useState("stash");
+  const switchTab = useCallback((newTab) => {
+    if (scrollRef.current) scrollPositions.current[tab] = scrollRef.current.scrollTop;
+    setTabRaw(newTab);
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollPositions.current[newTab] || 0;
+    });
+  }, [tab]);
+  const [stash, setStash] = useState([]);
+  const [profile, setProfile] = useState({ name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none" });
+  // Feature #18: Custom Heat Profiles
+  const [heatProfiles, setHeatProfiles] = useState(DEFAULT_PROFILES);
+  const [activeProfileId, setActiveProfileId] = useState(1);
+  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionPhase, setSessionPhase] = useState("details");
+  const [sessionData, setSessionData] = useState({ brand:"", strain:"", classification:"Hybrid", type:"Live Rosin", photo:"", spotifyUrl:"", isGlobbing:false, brand2:"", strain2:"", type2:"Live Rosin" });
+  const [ratingData, setRatingData] = useState({ vapor:0, taste:0, potency:0, rating:0, notes:"", effects:[], flavors:[] });
+  const [selectedTempF, setSelectedTempF] = useState(510);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [totalDuration, setTotalDuration] = useState(0);
+  const [boosts, setBoosts] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [stashFilter, setStashFilter] = useState("All");
+  const [stashSearch, setStashSearch] = useState("");
+  const [toast, setToast] = useState(null);
+  const [mounted, setMounted] = useState(false);
+  // Feature #11: Strain Encyclopedia
+  const [strainView, setStrainView] = useState(null);
+  // Feature #23: Share card
+  const [shareItem, setShareItem] = useState(null);
+  // Feature #18: Profile editor
+  const [editingProfile, setEditingProfile] = useState(null);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState(null);
+  const scrollRef = useRef(null);
+  const scrollPositions = useRef({});
+
+  // ─── Load all data from persistent storage on mount ───
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [savedStash, savedProfile, savedHP, savedActiveHP, savedOnboarded] = await Promise.all([
+          storageGet("puffco-stash", []),
+          storageGet("puffco-profile", { name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none" }),
+          storageGet("puffco-heat-profiles", DEFAULT_PROFILES),
+          storageGet("puffco-active-profile", 1),
+          storageGet("puffco-onboarded", false),
+        ]);
+        if (mounted) {
+          setStash(savedStash);
+          setProfile(savedProfile);
+          setHeatProfiles(savedHP);
+          setActiveProfileId(savedActiveHP);
+          setOnboarded(savedOnboarded);
+        }
+      } catch (err) {
+        console.error("Storage load error:", err);
+      }
+      if (mounted) {
+        setLoading(false);
+        setTimeout(() => setMounted(true), 50);
+      }
+    })();
+
+    // Safety net — if storage hangs, force past loading after 2s
+    const safetyTimeout = setTimeout(() => { if (mounted) setLoading(false); }, 800);
+    return () => { mounted = false; clearTimeout(safetyTimeout); };
+
+    // ─── PWA Setup ───────────────────────────────────
+    // Generate a 192x192 and 512x512 icon using canvas
+    function generateIcon(size) {
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const ctx = c.getContext("2d");
+      // Dark background
+      ctx.fillStyle = "#04040c";
+      ctx.fillRect(0, 0, size, size);
+      // Accent circle
+      const cx = size/2, cy = size/2, r = size * 0.35;
+      const g = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, r*1.2);
+      g.addColorStop(0, "#6C5CE7");
+      g.addColorStop(1, "#6C5CE7" + "40");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, cy, r*1.1, 0, Math.PI*2); ctx.fill();
+      // Flame shape
+      ctx.fillStyle = "#6C5CE7";
+      ctx.beginPath();
+      const s = size * 0.003;
+      ctx.moveTo(cx, cy - r*0.9);
+      ctx.bezierCurveTo(cx - r*0.15, cy - r*0.5, cx - r*0.6, cy - r*0.2, cx - r*0.55, cy + r*0.3);
+      ctx.bezierCurveTo(cx - r*0.5, cy + r*0.7, cx - r*0.2, cy + r*0.9, cx, cy + r*0.9);
+      ctx.bezierCurveTo(cx + r*0.2, cy + r*0.9, cx + r*0.5, cy + r*0.7, cx + r*0.55, cy + r*0.3);
+      ctx.bezierCurveTo(cx + r*0.6, cy - r*0.2, cx + r*0.15, cy - r*0.5, cx, cy - r*0.9);
+      ctx.fill();
+      // Inner lighter flame
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.beginPath();
+      const ir = r * 0.55;
+      ctx.moveTo(cx, cy - ir*0.6);
+      ctx.bezierCurveTo(cx - ir*0.3, cy, cx - ir*0.35, cy + ir*0.5, cx, cy + ir*0.7);
+      ctx.bezierCurveTo(cx + ir*0.35, cy + ir*0.5, cx + ir*0.3, cy, cx, cy - ir*0.6);
+      ctx.fill();
+      return c.toDataURL("image/png");
+    }
+
+    const icon192 = generateIcon(192);
+    const icon512 = generateIcon(512);
+
+    // Inject web app manifest
+    const manifest = {
+      name: "Puffco Companion",
+      short_name: "Puffco",
+      description: "Track your dabs, rate your concentrates, know your preferences.",
+      start_url: window.location.href.split("?")[0],
+      display: "standalone",
+      background_color: "#04040c",
+      theme_color: "#04040c",
+      orientation: "portrait",
+      icons: [
+        { src: icon192, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+        { src: icon512, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const manifestUrl = URL.createObjectURL(blob);
+    let link = document.querySelector('link[rel="manifest"]');
+    if (!link) { link = document.createElement("link"); link.rel = "manifest"; document.head.appendChild(link); }
+    link.href = manifestUrl;
+
+    // Inject meta tags for iOS and Android PWA
+    const metaTags = [
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Puffco" },
+      { name: "theme-color", content: "#04040c" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" },
+    ];
+    metaTags.forEach(({ name, content }) => {
+      if (!document.querySelector(`meta[name="${name}"]`)) {
+        const m = document.createElement("meta"); m.name = name; m.content = content; document.head.appendChild(m);
+      }
+    });
+
+    // Apple touch icon
+    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    if (!appleIcon) { appleIcon = document.createElement("link"); appleIcon.rel = "apple-touch-icon"; document.head.appendChild(appleIcon); }
+    appleIcon.href = icon192;
+
+    // Status bar styling for iOS
+    let statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (statusBar) statusBar.content = "black-translucent";
+
+    // Register a minimal service worker for offline caching if possible
+    if ("serviceWorker" in navigator) {
+      const swCode = `
+        self.addEventListener("install", e => { self.skipWaiting(); });
+        self.addEventListener("activate", e => { e.waitUntil(clients.claim()); });
+        self.addEventListener("fetch", e => {
+          e.respondWith(
+            caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+              if (res.ok && e.request.method === "GET") {
+                const clone = res.clone();
+                caches.open("puffco-v1").then(c => c.put(e.request, clone));
+              }
+              return res;
+            }).catch(() => caches.match(e.request))
+            )
+          );
+        });
+      `;
+      const swBlob = new Blob([swCode], { type: "application/javascript" });
+      const swUrl = URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(() => {});
+    }
+  }, []);
+
+  // ─── Save to persistent storage on every change ───
+  const saveRef = useRef(null);
+  useEffect(() => {
+    if (loading) return; // Don't save during initial load
+    clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(() => {
+      storageSet("puffco-stash", stash);
+      storageSet("puffco-profile", profile);
+      storageSet("puffco-heat-profiles", heatProfiles);
+      storageSet("puffco-active-profile", activeProfileId);
+      storageSet("puffco-onboarded", onboarded);
+    }, 300);
+  }, [stash, profile, heatProfiles, activeProfileId, onboarded, loading]);
+
+  const accent = profile.accent || "#6C5CE7";
+  const accent2 = profile.accent2 || null;
+  const accentGrad = accent2 ? `linear-gradient(135deg, ${accent}, ${accent2})` : accent;
+  const streak = useMemo(() => getStreak(stash), [stash]);
+  const xp = useMemo(() => calcXP(stash), [stash]);
+  const lvl = useMemo(() => getLvl(xp), [xp]);
+  const unlocked = useMemo(() => ACHIEVEMENTS.filter(a => a.check(stash)), [stash]);
+  const activeHP = heatProfiles.find(p => p.id === activeProfileId) || heatProfiles[0];
+
+  // Feature #11: Strain encyclopedia data
+  const strainMap = useMemo(() => {
+    const m = {};
+    stash.forEach(s => {
+      if (!s.brand || !s.strain) return;
+      const key = `${s.brand}|||${s.strain}`;
+      if (!m[key]) m[key] = { brand:s.brand, strain:s.strain, sessions:[], types:new Set(), classifications:new Set() };
+      m[key].sessions.push(s);
+      if (s.type) m[key].types.add(s.type);
+      if (s.classification) m[key].classifications.add(s.classification);
+    });
+    return m;
+  }, [stash]);
+
+  // Feature #9: Profile stats
+  const profileStats = useMemo(() => {
+    if (!stash.length) return null;
+    const avg = k => { const v=stash.filter(s=>s[k]>0).map(s=>s[k]); return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"—" };
+    const brands = [...new Set(stash.map(s=>s.brand).filter(Boolean))];
+    const strains = [...new Set(stash.map(s=>`${s.brand}-${s.strain}`))];
+    const tempCounts = stash.reduce((a,s)=>{const z=getZone(s.finalTempF||500).name;a[z]=(a[z]||0)+1;return a},{});
+    const favZone = Object.entries(tempCounts).sort((a,b)=>b[1]-a[1])[0];
+    const topStrain = Object.entries(stash.reduce((a,s)=>{const k=s.strain;a[k]=(a[k]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1])[0];
+    return { total:stash.length, avgRating:avg("rating"), avgVapor:avg("vapor"), avgTaste:avg("taste"), avgPotency:avg("potency"), brands:brands.length, strains:strains.length, favZone:favZone?favZone[0]:null, topStrain:topStrain?topStrain[0]:null, topStrainCount:topStrain?topStrain[1]:0 };
+  }, [stash]);
+
+  // ─── Session Timer ───────────────────────────────────
+  useEffect(() => {
+    if (sessionPhase !== "active" || isPaused || timeLeft <= 0) return;
+    const t = setTimeout(() => { setTimeLeft(p=>p-1); setTotalDuration(p=>p+1); }, 1000);
+    return () => clearTimeout(t);
+  }, [sessionPhase, timeLeft, isPaused]);
+
+  // ─── Complete Session ────────────────────────────────
+  const completeSession = () => {
+    const fTemp = selectedTempF + boosts*18;
+    const zone = getZone(fTemp);
+    const entry = { id:Date.now(), ...sessionData, finalTempF:fTemp, duration:totalDuration, bestTemp:zone.name, ...ratingData, date:new Date().toISOString().split("T")[0], timeOfDay:new Date().getHours()<12?"Morning":new Date().getHours()<17?"Afternoon":"Evening" };
+    const prev=[...stash]; const updated=[entry,...stash];
+    setStash(updated);
+    setProfile(p=>({...p,dabsSinceClean:(p.dabsSinceClean||0)+1}));
+    const prevIds=ACHIEVEMENTS.filter(a=>a.check(prev)).map(a=>a.id);
+    const newIds=ACHIEVEMENTS.filter(a=>a.check(updated)).filter(a=>!prevIds.includes(a.id));
+    if(newIds.length){setToast(newIds[0]);setTimeout(()=>setToast(null),3500)}
+    resetSession();
+  };
+
+  const resetSession = () => { setSessionActive(false);setSessionPhase("details");setSessionData({brand:"",strain:"",classification:"Hybrid",type:"Live Rosin",photo:"",spotifyUrl:"",isGlobbing:false,brand2:"",strain2:"",type2:"Live Rosin"});setRatingData({vapor:0,taste:0,potency:0,rating:0,notes:"",effects:[],flavors:[]});setBoosts(0);setTimeLeft(30);setTotalDuration(0);setIsPaused(false) };
+
+  // Feature #6: Repeat last session
+  const repeatLast = (item) => {
+    setSessionData({ brand:item.brand, strain:item.strain, classification:item.classification||"Hybrid", type:item.type||"Live Rosin", photo:"" });
+    setSelectedTempF(item.finalTempF || 510);
+    setSessionPhase("select");
+    setSessionActive(true);
+  };
+
+  const handleClean = () => { setProfile(p=>({...p,dabsSinceClean:0,cleanHistory:[{date:new Date().toISOString().split("T")[0],sessions:p.dabsSinceClean||0},...(p.cleanHistory||[])]})) };
+  const photoRef = useRef(null);
+  const avg = k => { const v=stash.filter(s=>s[k]>0).map(s=>s[k]); return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"—" };
+
+  // ═══════════════════════════════════════════════════════
+  // LOADING SCREEN — wait for persistent storage
+  // ═══════════════════════════════════════════════════════
+  if (loading) {
+    return (
+      <div style={{height:"100vh",background:"#04040c",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:20}}>
+        <style>{`@keyframes loadPulse{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}@keyframes loadFade{from{opacity:0}to{opacity:1}}*{margin:0;padding:0;box-sizing:border-box}`}</style>
+        <div style={{fontSize:48,animation:"loadPulse 1.5s ease-in-out infinite"}}>🔥</div>
+        <div style={{textAlign:"center",animation:"loadFade 0.5s ease forwards"}}>
+          <div style={{fontSize:11,letterSpacing:6,color:"rgba(255,255,255,0.2)",textTransform:"uppercase",fontFamily:"monospace"}}>Puffco</div>
+          <div style={{fontSize:22,fontWeight:600,color:"white",marginTop:4,fontFamily:"system-ui,-apple-system,sans-serif"}}>Companion</div>
+        </div>
+        <div style={{fontSize:9,letterSpacing:3,color:"rgba(255,255,255,0.15)",textTransform:"uppercase",fontFamily:"monospace",marginTop:8}}>Loading...</div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FEATURE #1: ONBOARDING
+  // ═══════════════════════════════════════════════════════
+  if (!onboarded) {
+    return (
+      <div style={{minHeight:"100vh",background:"#04040c",color:accent,fontFamily:"'Syne','Helvetica Neue',sans-serif",position:"relative",overflow:"hidden"}}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');@keyframes twinkle{0%,100%{opacity:0.15}50%{opacity:0.7}}@keyframes pulse{0%,100%{opacity:0.5;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}*{margin:0;padding:0;box-sizing:border-box}`}</style>
+        <SmokeBackground accent={accent} accent2={accent2} /><Starfield accent={accent} accentGrad={accentGrad} />
+        <OnboardingFlow accent={accent} onDone={(name, device) => {
+          setProfile(p => ({ ...p, name, device }));
+          storageSet("puffco-onboarded", true);
+          setOnboarded(true);
+        }} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{height:"100vh",background:"#04040c",color:accent,fontFamily:"'Syne','Helvetica Neue',sans-serif",overflow:"hidden",position:"relative"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+        @keyframes twinkle{0%,100%{opacity:0.15}50%{opacity:0.7}}
+        @keyframes pulse{0%,100%{opacity:0.5;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}
+        @keyframes rotateRing{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes breathe{0%,100%{box-shadow:0 0 16px rgba(108,92,231,0.08)}50%{box-shadow:0 0 32px rgba(108,92,231,0.18)}}
+        @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;overflow:hidden;background:#04040c}
+        body{padding:0}
+        ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
+        .fu{}.fu1{}.fu2{}.fu3{}.fu4{}
+        input::placeholder,textarea::placeholder{color:rgba(255,255,255,0.2)}input:focus,textarea:focus{border-color:rgba(255,255,255,0.15)!important}
+        .glass-panel[style*="pointer"]:hover{background:rgba(20,20,36,0.9)!important}
+        .glass-panel[style*="pointer"]:active{background:rgba(28,28,44,0.95)!important}
+        button{-webkit-tap-highlight-color:transparent}
+      `}</style>
+      <SmokeBackground accent={accent} accent2={accent2} /><Starfield accent={accent} accentGrad={accentGrad} />
+
+      {/* Toast */}
+      {/* Achievement Unlock Cinematic (#27) */}
+      {toast && (
+        <div onClick={()=>setToast(null)} style={{position:"fixed",inset:0,zIndex:90,background:"rgba(4,4,12,0.95)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+          <style>{`
+            @keyframes achievePop{0%{transform:scale(0);opacity:0}50%{transform:scale(1.2);opacity:1}100%{transform:scale(1);opacity:1}}
+            @keyframes achieveGlow{0%,100%{box-shadow:0 0 30px ${accent}30}50%{box-shadow:0 0 80px ${accent}60}}
+            @keyframes achieveRing{0%{transform:scale(0.5);opacity:0}100%{transform:scale(2.5);opacity:0}}
+            @keyframes achieveFade{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+          `}</style>
+          {/* Expanding rings */}
+          <div style={{position:"absolute",width:100,height:100,borderRadius:"50%",border:`2px solid ${accent}`,animation:"achieveRing 1.5s ease-out forwards"}}/>
+          <div style={{position:"absolute",width:100,height:100,borderRadius:"50%",border:`1px solid ${accent}`,animation:"achieveRing 1.5s ease-out 0.3s forwards",opacity:0}}/>
+          <div style={{position:"absolute",width:100,height:100,borderRadius:"50%",border:`1px solid ${accent}`,animation:"achieveRing 1.5s ease-out 0.6s forwards",opacity:0}}/>
+          {/* Badge */}
+          <div style={{width:90,height:90,borderRadius:"50%",background:`${accent}15`,border:`2px solid ${accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44,animation:"achievePop 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards, achieveGlow 2s ease-in-out 0.6s infinite",marginBottom:24}}>
+            {toast.emoji}
+          </div>
+          {/* Text */}
+          <div style={{fontSize:9,letterSpacing:4,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",color:accent,fontWeight:700,animation:"achieveFade 0.5s ease 0.4s forwards",opacity:0}}>Achievement Unlocked</div>
+          <div style={{fontSize:22,fontWeight:600,marginTop:8,animation:"achieveFade 0.5s ease 0.6s forwards",opacity:0}}>{toast.title}</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:6,animation:"achieveFade 0.5s ease 0.8s forwards",opacity:0}}>{toast.desc}</div>
+          <div style={{fontSize:9,color:"rgba(255,255,255,0.15)",marginTop:24,animation:"achieveFade 0.5s ease 1s forwards",opacity:0,fontFamily:"'JetBrains Mono',monospace"}}>Tap to dismiss</div>
+        </div>
+      )}
+
+      {/* Session Overlay */}
+      {sessionActive && <SessionOverlay sessionPhase={sessionPhase} setSessionPhase={setSessionPhase} sessionData={sessionData} setSessionData={setSessionData} ratingData={ratingData} setRatingData={setRatingData} selectedTempF={selectedTempF} setSelectedTempF={setSelectedTempF} timeLeft={timeLeft} setTimeLeft={setTimeLeft} totalDuration={totalDuration} boosts={boosts} setBoosts={setBoosts} isPaused={isPaused} setIsPaused={setIsPaused} accent={accent} heatProfiles={heatProfiles} activeHP={activeHP} completeSession={completeSession} onClose={resetSession} photoRef={photoRef} knownBrands={[...new Set(stash.map(s=>s.brand).filter(Boolean))].sort()} knownStrains={[...new Set(stash.map(s=>s.strain).filter(Boolean))].sort()} stash={stash} />}
+
+      <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",height:"100%",display:"flex",flexDirection:"column",padding:"0 18px"}}>
+        {/* Header */}
+        <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 0 14px",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div>
+              <div style={{fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Puffco</div>
+              <div style={{fontSize:19,fontWeight:600,letterSpacing:-0.3,marginTop:1,color:"white"}}>Companion</div>
+            </div>
+            <button onClick={()=>setChangelogOpen(true)} style={{background:"none",border:"none",cursor:"pointer",WebkitTapHighlightColor:"transparent",marginTop:14,padding:"2px 4px"}}>
+              <span style={{fontSize:7,fontFamily:"'JetBrains Mono',monospace",color:"rgba(255,255,255,0.2)",letterSpacing:1}}>v{APP_VERSION}</span>
+            </button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {streak>1&&<div style={{display:"flex",alignItems:"center",gap:5,padding:"6px 12px",borderRadius:16,background:"rgba(255,138,0,0.08)",border:"1px solid rgba(255,138,0,0.2)"}}><span style={{fontSize:12,color:"#ff8a00",fontWeight:600}}>🔥 {streak}d</span></div>}
+            <div style={{display:"flex",alignItems:"center",gap:5,padding:"6px 12px",borderRadius:16,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><span style={{fontSize:16}}>{lvl.emoji}</span><span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"rgba(255,255,255,0.4)",letterSpacing:1}}>Lv.{lvl.level}</span></div>
+          </div>
+        </header>
+
+        <div ref={scrollRef} style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",paddingBottom:140}}>
+
+          {/* ─── STASH TAB ─── */}
+          {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} />}
+
+          {/* ─── STATS TAB ─── */}
+          {tab==="stats"&&<StatsTab stash={stash} accent={accent} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} avg={avg} />}
+
+          {/* ─── CARE TAB ─── */}
+          {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} />}
+
+          {/* ─── PROFILE TAB (includes #9 stats summary, #18 custom profiles) ─── */}
+          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} />}
+
+          {/* ─── STRAIN ENCYCLOPEDIA (#11) ─── */}
+          {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} />}
+        </div>
+      </div>
+
+      {/* Bottom Nav — OUTSIDE scroll container, always visible */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,paddingBottom:"env(safe-area-inset-bottom, 0px)",background:"#04040c"}}>
+        <div style={{padding:"8px 18px 8px",background:"linear-gradient(to top, #04040c 80%, transparent)"}}>
+        <div style={{maxWidth:440,margin:"0 auto"}}>
+          <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",background:"rgba(8,8,20,0.95)",borderRadius:18,padding:"6px 0",border:"1px solid rgba(255,255,255,0.05)"}}>
+            <NavItem icon="📋" label="Stash" active={tab==="stash"} onClick={()=>switchTab("stash")} accent={accent} accentGrad={accentGrad} />
+            <NavItem icon="📊" label="Stats" active={tab==="stats"} onClick={()=>switchTab("stats")} accent={accent} accentGrad={accentGrad} />
+            <div style={{position:"relative",top:-22}}>
+              <button onClick={()=>{setSessionActive(true);setSessionPhase("details");setSelectedTempF(activeHP.tempF)}} style={{position:"relative",zIndex:2,width:52,height:52,borderRadius:"50%",background:accent2?`radial-gradient(circle at 45% 40%,${accent}20,${accent2}10,rgba(4,4,12,0.92))`:`radial-gradient(circle at 45% 40%,${accent}15,rgba(4,4,12,0.92))`,border:`1.5px solid ${accent}35`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:accent2?`0 0 20px ${accent}25, 0 0 40px ${accent2}15,inset 0 1px 0 rgba(255,255,255,0.06)`:`0 0 20px ${accent}25,inset 0 1px 0 rgba(255,255,255,0.06)`,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}><FlameIcon size={30} accent={accent}/></button>
+            </div>
+            <NavItem icon="🔧" label="Care" active={tab==="care"} onClick={()=>switchTab("care")} accent={accent} accentGrad={accentGrad} />
+            {profile.avatar ? (
+              <button onClick={()=>switchTab("profile")} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"8px 16px",borderRadius:12,position:"relative"}}>
+                <div style={{position:"relative",width:24,height:24}}>
+                  <PfpFrame frameId={profile.frame||"none"} size={24} accent={accent} accentGrad={accentGrad} />
+                  <div style={{width:24,height:24,borderRadius:"50%",overflow:"hidden",border:`1.5px solid ${tab==="profile"?accent:"rgba(255,255,255,0.15)"}`}}>
+                    <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                  </div>
+                </div>
+                <span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:tab==="profile"?accent:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontWeight:tab==="profile"?600:400}}>Profile</span>
+                {tab==="profile"&&<div style={{position:"absolute",bottom:0,width:14,height:2,borderRadius:1,background:accent}}/>}
+              </button>
+            ) : (
+              <NavItem icon="👤" label="Profile" active={tab==="profile"} onClick={()=>switchTab("profile")} accent={accent} accentGrad={accentGrad} />
+            )}
+          </div>
+        </div>
+        </div>
+      </div>
+
+      {/* Session Detail Modal */}
+      {selectedItem&&<DetailModal item={selectedItem} accent={accent} onClose={()=>setSelectedItem(null)} onDelete={id=>{setStash(p=>p.filter(s=>s.id!==id));setSelectedItem(null)}} onRepeat={item=>{setSelectedItem(null);repeatLast(item)}} onShare={item=>{setSelectedItem(null);setShareItem(item)}} onEdit={item=>{setSelectedItem(null);setEditingSession({...item})}} />}
+
+      {/* Feature #23: Shareable Card */}
+      {shareItem&&<ShareCard item={shareItem} accent={accent} onClose={()=>setShareItem(null)} />}
+
+      {/* Feature #11: Strain Detail Modal */}
+      {strainView&&<StrainDetailModal strainKey={strainView} strainMap={strainMap} accent={accent} onClose={()=>setStrainView(null)} onSelect={setSelectedItem} />}
+
+      {/* Session Edit Modal (#46) */}
+      {editingSession&&(
+        <div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.98)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)setEditingSession(null)}}>
+          <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
+            <button onClick={()=>setEditingSession(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+            <h2 style={{fontSize:18,fontWeight:300,letterSpacing:3,textTransform:"uppercase",marginBottom:20}}>Edit Session</h2>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+              <div><ML>Brand</ML><Input value={editingSession.brand||""} onChange={e=>setEditingSession(p=>({...p,brand:e.target.value}))}/></div>
+              <div><ML>Strain</ML><Input value={editingSession.strain||""} onChange={e=>setEditingSession(p=>({...p,strain:e.target.value}))}/></div>
+            </div>
+            <ML>Classification</ML>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+              {["Indica","Hybrid","Sativa"].map(c=><button key={c} onClick={()=>setEditingSession(p=>({...p,classification:c}))} style={{padding:"8px 0",borderRadius:10,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontWeight:600,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",background:editingSession.classification===c?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.04)",color:editingSession.classification===c?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${editingSession.classification===c?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.08)"}`}}>{c}</button>)}
+            </div>
+            <ML>Extract Type</ML>
+            <select value={editingSession.type||"Live Rosin"} onChange={e=>setEditingSession(p=>({...p,type:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif",marginBottom:14}}>{EXTRACT_TYPES.map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}</select>
+            <ML>Ratings</ML>
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
+              {[{k:"vapor",l:"Vapor"},{k:"taste",l:"Taste"},{k:"potency",l:"Potency"},{k:"rating",l:"Overall"}].map(m=><div key={m.k} style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",width:60}}>{m.l}</span><div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(s=><button key={s} onClick={()=>setEditingSession(p=>({...p,[m.k]:s}))} style={{background:"none",border:"none",cursor:"pointer",padding:2,WebkitTapHighlightColor:"transparent"}}><Leaf size={18} filled={s<=(editingSession[m.k]||0)} accent={accent}/></button>)}</div></div>)}
+            </div>
+            <ML>Notes</ML>
+            <Input rows={2} value={editingSession.notes||""} onChange={e=>setEditingSession(p=>({...p,notes:e.target.value}))} placeholder="Notes..." style={{marginBottom:14}} />
+            <ML>Effects</ML>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+              {EFFECTS_LIST.map(e=>{const sel=(editingSession.effects||[]).includes(e.id);return<button key={e.id} onClick={()=>setEditingSession(p=>({...p,effects:sel?(p.effects||[]).filter(x=>x!==e.id):[...(p.effects||[]),e.id]}))} style={{padding:"4px 8px",borderRadius:8,fontSize:8,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",background:sel?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${sel?accent+"40":"rgba(255,255,255,0.06)"}`,color:sel?accent:"rgba(255,255,255,0.35)"}}>{e.emoji} {e.label}</button>})}
+            </div>
+            <Btn accent={accent} onClick={()=>{setStash(p=>p.map(s=>s.id===editingSession.id?editingSession:s));setEditingSession(null)}}>Save Changes</Btn>
+            <Btn secondary onClick={()=>setEditingSession(null)} style={{marginTop:8}}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Changelog Modal */}
+      {changelogOpen&&(
+        <div style={{position:"fixed",inset:0,zIndex:75,background:"rgba(4,4,12,0.98)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)setChangelogOpen(false)}}>
+          <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
+            <button onClick={()=>setChangelogOpen(false)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+
+            <div style={{fontSize:10,letterSpacing:4,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Changelog</div>
+            <h2 style={{fontSize:22,fontWeight:600,marginBottom:24}}>What's New</h2>
+
+            {[
+              { version:"3.1.0", date:"2026", label:"Current", entries:[
+                {type:"new",text:"Strain & brand autocomplete — previous entries suggest as you type to prevent duplicates"},
+                {type:"new",text:"PFP frame rewards — 12 unique SVG frames unlocked at each XP level"},
+                {type:"new",text:"Named accent themes — Hash, Live Rosin, Shatter, Diamonds, Terps, Ice Hash, Bubble, Rosin"},
+                {type:"new",text:"Cleaning guide — step-by-step chamber soak walkthrough with pro tips in Care tab"},
+                {type:"new",text:"Help center — How to Use guide, FAQ, and ticket submission system in Profile"},
+                {type:"new",text:"PWA support — add to home screen, standalone mode, offline caching"},
+                {type:"new",text:"Session step indicator — progress dots showing where you are in the session flow"},
+                {type:"new",text:"Avatar photo upload — tap your profile pic to add a photo, shows in nav bar"},
+                {type:"fix",text:"Session persistence — switched from localStorage to persistent storage API"},
+                {type:"fix",text:"Click responsiveness — removed all backdrop-filter blur and heavy CSS transitions"},
+                {type:"fix",text:"Smoke background performance — pre-rendered noise textures, zero per-frame computation"},
+                {type:"fix",text:"Theme switching — instant accent color change via CSS custom properties"},
+              ]},
+              { version:"3.0.0", date:"2026", label:"Deep Space Noir", entries:[
+                {type:"new",text:"Complete visual redesign — dark space noir aesthetic with glassmorphism panels"},
+                {type:"new",text:"Animated smoke background — rising accent-colored smoke from the bottom"},
+                {type:"new",text:"Custom flame icon — SVG flame in the nav bar colored to match your theme"},
+                {type:"new",text:"Onboarding flow — 4-step first launch experience with profile setup"},
+                {type:"new",text:"Repeat last session — one-tap shortcut at the top of the Stash tab"},
+                {type:"new",text:"Profile stats summary — at-a-glance card with avg rating, brands, strains, fav temp"},
+                {type:"new",text:"Strain encyclopedia — personal database of every strain with averaged ratings and effects"},
+                {type:"new",text:"Session photos — upload jar photos during logging, displayed on cards and share cards"},
+                {type:"new",text:"Custom heat profiles — create, edit, delete profiles with custom temps and colors"},
+                {type:"new",text:"Shareable session cards — export styled PNG cards for sharing on social media"},
+                {type:"new",text:"XP and leveling system — 12 ranks from Newbie to Dab God"},
+                {type:"new",text:"11 achievements — including 2 secret achievements to discover"},
+              ]},
+              { version:"2.0.0", date:"2025", label:"Original", entries:[
+                {type:"new",text:"Initial release — session logging, stats tracking, care timer"},
+                {type:"new",text:"4 default heat profiles — Blue, Green, Red, White"},
+                {type:"new",text:"Effects tracking — 11 effects to tag on each session"},
+                {type:"new",text:"Rating system — vapor, taste, potency, and overall ratings"},
+              ]},
+            ].map(release => (
+              <Glass key={release.version} style={{marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:14,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>v{release.version}</span>
+                    {release.label&&<span style={{fontSize:8,padding:"3px 8px",borderRadius:8,background:`${accent}15`,color:accent,fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase"}}>{release.label}</span>}
+                  </div>
+                  <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>{release.date}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {release.entries.map((e,i) => (
+                    <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                      <span style={{
+                        fontSize:7,padding:"2px 6px",borderRadius:6,flexShrink:0,marginTop:2,
+                        fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",fontWeight:600,
+                        background: e.type==="new" ? "rgba(74,222,128,0.12)" : e.type==="fix" ? "rgba(96,165,250,0.12)" : "rgba(251,191,36,0.12)",
+                        color: e.type==="new" ? "#4ade80" : e.type==="fix" ? "#60a5fa" : "#fbbf24",
+                      }}>{e.type}</span>
+                      <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>{e.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </Glass>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// FEATURE #1: ONBOARDING FLOW
+// ═══════════════════════════════════════════════════════
+function OnboardingFlow({ accent, onDone }) {
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState("");
+  const [device, setDevice] = useState("Peak");
+  const steps = [
+    { title:"Welcome to Puffco Companion", sub:"Track every dab. Rate your concentrates. Know your preferences.", icon:"🔥" },
+    { title:"Log Your Sessions", sub:"Record strain, temp, ratings, effects, and photos. Build your personal concentrate library.", icon:"📓" },
+    { title:"Your Stats, Your Way", sub:"See trends, streaks, and what hits different. The more you log, the smarter it gets.", icon:"📊" },
+  ];
+  if (step < 3) {
+    const s = steps[step];
+    return (
+      <div style={{position:"relative",zIndex:1,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+        <div className="fu fu1" style={{fontSize:72,marginBottom:28}}>{s.icon}</div>
+        <h1 className="fu fu2" style={{fontSize:22,fontWeight:300,letterSpacing:3,textTransform:"uppercase",textAlign:"center",marginBottom:12}}>{s.title}</h1>
+        <p className="fu fu3" style={{color:"rgba(255,255,255,0.4)",textAlign:"center",fontSize:13,lineHeight:1.6,maxWidth:300,marginBottom:40}}>{s.sub}</p>
+        <div style={{display:"flex",gap:6,marginBottom:32}}>{[0,1,2,3].map(i=><div key={i} style={{width:i===step?24:8,height:4,borderRadius:2,background:i===step?"white":"rgba(255,255,255,0.15)"}}/>)}</div>
+        <Btn accent="white" onClick={()=>setStep(step+1)} style={{maxWidth:300}}>Next</Btn>
+        <button onClick={()=>setStep(3)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.25)",fontSize:10,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer",marginTop:16}}>Skip</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{position:"relative",zIndex:1,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+      <h1 className="fu fu1" style={{fontSize:22,fontWeight:300,letterSpacing:3,textTransform:"uppercase",textAlign:"center",marginBottom:8}}>Set Up Your Profile</h1>
+      <p className="fu fu2" style={{color:"rgba(255,255,255,0.35)",fontSize:12,marginBottom:28}}>You can change these later</p>
+      <div className="fu fu3" style={{width:"100%",maxWidth:300,marginBottom:16}}>
+        <ML>Your Name</ML>
+        <Input value={name} onChange={e=>setName(e.target.value)} placeholder="What should we call you?" />
+      </div>
+      <div className="fu fu4" style={{width:"100%",maxWidth:300,marginBottom:28}}>
+        <ML>Your Device</ML>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><button key={d} onClick={()=>setDevice(d)} style={{padding:10,borderRadius:10,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:device===d?"white":"rgba(255,255,255,0.04)",color:device===d?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${device===d?"white":"rgba(255,255,255,0.08)"}`}}>{d}</button>)}
+        </div>
+      </div>
+      <Btn accent="white" onClick={()=>onDone(name||"Dabber",device)} style={{maxWidth:300}}>Let's Go</Btn>
+    </div>
+  );
+}
+
+// ─── Autocomplete Input ────────────────────────────────
+function AutoInput({ value, onChange, suggestions, placeholder, style }) {
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const q = value.toLowerCase().trim();
+  const filtered = q ? suggestions.filter(s => s.toLowerCase().includes(q) && s.toLowerCase() !== q) : suggestions;
+  const show = focused && filtered.length > 0;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => { setFocused(true); setOpen(true); }}
+        onBlur={() => setTimeout(() => { setFocused(false); setOpen(false); }, 150)}
+        placeholder={placeholder}
+        style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "10px 14px", fontSize: 13, color: "white", outline: "none", fontFamily: "'Syne','Helvetica Neue',sans-serif", ...style }}
+      />
+      {show && open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, marginTop: 4,
+          background: "rgba(12,12,24,0.95)", border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 12, overflow: "hidden", maxHeight: 160, overflowY: "auto",
+        }}>
+          {filtered.slice(0, 8).map(s => (
+            <button key={s} onMouseDown={e => { e.preventDefault(); onChange(s); setOpen(false); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
+                background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                color: "rgba(255,255,255,0.7)", fontSize: 12, cursor: "pointer",
+                fontFamily: "'Syne','Helvetica Neue',sans-serif",
+                WebkitTapHighlightColor: "transparent",
+              }}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// SESSION OVERLAY (includes #16 photo upload)
+// ═══════════════════════════════════════════════════════
+function SessionOverlay({sessionPhase,setSessionPhase,sessionData,setSessionData,ratingData,setRatingData,selectedTempF,setSelectedTempF,timeLeft,setTimeLeft,totalDuration,boosts,setBoosts,isPaused,setIsPaused,accent,heatProfiles,activeHP,completeSession,onClose,photoRef,knownBrands,knownStrains,stash}) {
+  const zone = getZone(selectedTempF + boosts*18);
+  const effectiveTempF = selectedTempF + boosts*18;
+  const fileRef = useRef(null);
+
+  // If a brand is selected, show strains from that brand first, then all others
+  const brandStrains = useMemo(() => {
+    if (!sessionData.brand.trim() || !stash) return knownStrains || [];
+    const brandMatch = sessionData.brand.trim().toLowerCase();
+    const fromBrand = [...new Set(stash.filter(s => s.brand?.toLowerCase() === brandMatch).map(s => s.strain).filter(Boolean))].sort();
+    const others = (knownStrains || []).filter(s => !fromBrand.map(x=>x.toLowerCase()).includes(s.toLowerCase()));
+    return [...fromBrand, ...others];
+  }, [sessionData.brand, stash, knownStrains]);
+
+  const STEPS = [
+    { id:"details", label:"Load" },
+    { id:"select", label:"Heat" },
+    { id:"heating", label:"Sesh" },
+    { id:"active", label:"Sesh" },
+    { id:"effects", label:"Effects" },
+    { id:"rating", label:"Rate" },
+  ];
+  // Collapse heating+active into one visual step
+  const visualSteps = ["details","select","active","effects","rating"];
+  const currentVisual = (sessionPhase === "heating") ? "active" : sessionPhase;
+  const currentIdx = visualSteps.indexOf(currentVisual);
+  const stepLabels = ["Load","Heat","Session","Effects","Rate"];
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:60,background:"rgba(4,4,12,0.98)",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:440,margin:"0 auto",padding:"0 24px",display:"flex",flexDirection:"column",minHeight:"100%",paddingTop:"max(54px, calc(env(safe-area-inset-top, 28px) + 26px))",paddingBottom:40}}>
+        {/* Close button — only during setup phases */}
+        {(sessionPhase==="details"||sessionPhase==="select")&&<button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:65,WebkitTapHighlightColor:"transparent"}}>✕</button>}
+
+        {/* Step Indicator */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:0,marginBottom:24,padding:"0 10px"}}>
+          {visualSteps.map((step, i) => {
+            const isActive = i === currentIdx;
+            const isDone = i < currentIdx;
+            return (
+              <div key={step} style={{display:"flex",alignItems:"center",flex:1}}>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",flex:1}}>
+                  <div style={{
+                    width:isActive?28:isDone?22:18, height:isActive?28:isDone?22:18,
+                    borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
+                    
+                    background: isActive ? accent : isDone ? `${accent}40` : "rgba(255,255,255,0.04)",
+                    border: `1.5px solid ${isActive ? accent : isDone ? accent+"60" : "rgba(255,255,255,0.08)"}`,
+                    boxShadow: isActive ? `0 0 12px ${accent}40` : "none",
+                  }}>
+                    {isDone ? (
+                      <span style={{fontSize:10,color:"white"}}>✓</span>
+                    ) : (
+                      <span style={{fontSize:8,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:isActive?"#000":"rgba(255,255,255,0.25)"}}>{i+1}</span>
+                    )}
+                  </div>
+                  <span style={{
+                    fontSize:7, letterSpacing:1.5, textTransform:"uppercase",
+                    fontFamily:"'JetBrains Mono',monospace", marginTop:5,
+                    color: isActive ? accent : isDone ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.15)",
+                    fontWeight: isActive ? 700 : 400,
+                    
+                  }}>{stepLabels[i]}</span>
+                </div>
+                {i < visualSteps.length - 1 && (
+                  <div style={{
+                    flex:1, height:1.5, borderRadius:1, margin:"0 -4px", marginBottom:16,
+                    background: isDone ? `${accent}50` : "rgba(255,255,255,0.06)",
+                    transition:"background 0.4s",
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* DETAILS — includes #16 photo */}
+        {sessionPhase==="details"&&(
+          <div className="fu fu1" style={{flex:1}}>
+            <div style={{textAlign:"center",marginBottom:28}}><h2 style={{fontSize:22,fontWeight:300,letterSpacing:4,textTransform:"uppercase"}}>Load Chamber</h2><p style={{color:"rgba(255,255,255,0.3)",fontSize:12,marginTop:6}}>What are you dabbing?</p></div>
+            {/* Photo upload */}
+            <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{const f=e.target.files[0];if(!f)return;const d=await compressPhoto(f);setSessionData(p=>({...p,photo:d}))}} />
+            {sessionData.photo?(
+              <div style={{position:"relative",width:"100%",height:140,borderRadius:14,overflow:"hidden",marginBottom:16,border:"1px solid rgba(255,255,255,0.08)"}}>
+                <img src={sessionData.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                <button onClick={()=>setSessionData(p=>({...p,photo:""}))} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.6)",border:"none",borderRadius:"50%",width:28,height:28,color:"white",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+              </div>
+            ):(
+              <button onClick={()=>fileRef.current?.click()} style={{width:"100%",height:70,borderRadius:14,border:"1.5px dashed rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.25)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,marginBottom:16,fontSize:10,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>
+                <span style={{fontSize:22}}>📸</span>Add Jar Photo
+              </button>
+            )}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+              <div><ML>Brand *</ML><AutoInput value={sessionData.brand} onChange={v=>setSessionData(p=>({...p,brand:v}))} suggestions={knownBrands||[]} placeholder="e.g. 710 Labs"/></div>
+              <div><ML>Strain *</ML><AutoInput value={sessionData.strain} onChange={v=>setSessionData(p=>({...p,strain:v}))} suggestions={brandStrains} placeholder="e.g. Papaya"/></div>
+            </div>
+            <ML>Classification</ML>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+              {["Indica","Hybrid","Sativa"].map(c=><button key={c} onClick={()=>setSessionData(p=>({...p,classification:c}))} style={{padding:"10px 0",borderRadius:10,fontSize:10,letterSpacing:2,textTransform:"uppercase",fontWeight:600,cursor:"pointer",background:sessionData.classification===c?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.04)",color:sessionData.classification===c?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${sessionData.classification===c?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.08)"}`,fontFamily:"'JetBrains Mono',monospace"}}>{c}</button>)}
+            </div>
+            <ML>Extract Type</ML>
+            <select value={sessionData.type} onChange={e=>setSessionData(p=>({...p,type:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif",marginBottom:14}}>{EXTRACT_TYPES.map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}</select>
+
+            {/* Globbing Mode */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:sessionData.isGlobbing?14:16}}>
+              <ML style={{marginBottom:0}}>Globbing (Mix Strains)</ML>
+              <button onClick={()=>setSessionData(p=>({...p,isGlobbing:!p.isGlobbing}))} style={{width:42,height:24,borderRadius:12,cursor:"pointer",border:"none",background:sessionData.isGlobbing?accent:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",padding:2,WebkitTapHighlightColor:"transparent"}}>
+                <div style={{width:20,height:20,borderRadius:"50%",background:"white",transform:sessionData.isGlobbing?"translateX(18px)":"translateX(0)"}}/>
+              </button>
+            </div>
+            {sessionData.isGlobbing&&(
+              <div style={{padding:14,borderRadius:14,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",marginBottom:16}}>
+                <ML>Second Strain</ML>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:10}}>
+                  <AutoInput value={sessionData.brand2} onChange={v=>setSessionData(p=>({...p,brand2:v}))} suggestions={knownBrands||[]} placeholder="Brand 2"/>
+                  <AutoInput value={sessionData.strain2} onChange={v=>setSessionData(p=>({...p,strain2:v}))} suggestions={knownStrains||[]} placeholder="Strain 2"/>
+                </div>
+                <select value={sessionData.type2} onChange={e=>setSessionData(p=>({...p,type2:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>{EXTRACT_TYPES.map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}</select>
+              </div>
+            )}
+
+            <ML>Session Playlist (optional)</ML>
+            <Input value={sessionData.spotifyUrl} onChange={e=>setSessionData(p=>({...p,spotifyUrl:e.target.value}))} placeholder="Paste Spotify link..." style={{marginBottom:20}} />
+            <Btn accent={accent} disabled={!sessionData.brand.trim()||!sessionData.strain.trim()} onClick={()=>{if(sessionData.brand.trim()&&sessionData.strain.trim()){
+              // Smart temp suggestion: check if this strain was logged before
+              const strainHistory = stash.filter(s=>s.strain?.toLowerCase()===sessionData.strain.trim().toLowerCase()&&s.brand?.toLowerCase()===sessionData.brand.trim().toLowerCase()&&s.rating>0);
+              let suggestedTemp = TEMP_SUGGESTIONS[sessionData.type]||activeHP.tempF;
+              if(strainHistory.length>0){
+                // Use the temp from the highest-rated session of this strain
+                const best = strainHistory.sort((a,b)=>(b.rating||0)-(a.rating||0))[0];
+                if(best.finalTempF) suggestedTemp = best.finalTempF;
+              }
+              setSelectedTempF(suggestedTemp);
+              setSessionPhase("select");
+            }}}>Next — Select Heat</Btn>
+            <Btn secondary onClick={()=>{setSessionData(p=>({...p,brand:"Quick",strain:"Session"}));setSessionPhase("select")}} style={{marginTop:8}}>Skip Logging</Btn>
+          </div>
+        )}
+
+        {/* SELECT HEAT — uses custom profiles */}
+        {sessionPhase==="select"&&(
+          <div className="fu fu1" style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <div style={{textAlign:"center",marginBottom:28}}>
+              <h2 style={{fontSize:22,fontWeight:300,letterSpacing:4,textTransform:"uppercase"}}>Select Heat</h2>
+              {(()=>{
+                const hist = stash.filter(s=>s.strain?.toLowerCase()===sessionData.strain.trim().toLowerCase()&&s.brand?.toLowerCase()===sessionData.brand.trim().toLowerCase()&&s.rating>0);
+                const best = hist.sort((a,b)=>(b.rating||0)-(a.rating||0))[0];
+                return best?.finalTempF === selectedTempF && hist.length > 0 ?
+                  <p style={{color:accent,fontSize:10,marginTop:6,fontFamily:"'JetBrains Mono',monospace",letterSpacing:1}}>★ {selectedTempF}°F suggested from your best {sessionData.strain} session</p> :
+                  <p style={{color:"rgba(255,255,255,0.3)",fontSize:12,marginTop:6}}>Tap a profile or set custom temp</p>;
+              })()}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+              {heatProfiles.map(p=>{const z=getZone(p.tempF);const sel=selectedTempF===p.tempF;return(
+                <Glass key={p.id} onClick={()=>setSelectedTempF(p.tempF)} glow={sel?p.color:null} style={{padding:"16px 14px",textAlign:"center",transform:sel?"scale(1.03)":"scale(1)"}}>
+                  <div style={{width:12,height:12,borderRadius:"50%",background:p.color,margin:"0 auto 8px",boxShadow:sel?`0 0 10px ${p.color}60`:"none"}}/>
+                  <div style={{fontSize:10,letterSpacing:1.5,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:sel?"white":"rgba(255,255,255,0.4)"}}>{p.name}</div>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{p.tempF}°F · {p.time}s</div>
+                </Glass>
+              )})}
+            </div>
+            {/* Custom temp input */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}>
+              <ML style={{marginBottom:0,whiteSpace:"nowrap"}}>Custom °F</ML>
+              <input type="range" min={400} max={620} value={selectedTempF} onChange={e=>setSelectedTempF(Number(e.target.value))} style={{flex:1,accentColor:accent}} />
+              <span style={{fontSize:14,fontFamily:"'JetBrains Mono',monospace",fontWeight:500,minWidth:50,textAlign:"right"}}>{selectedTempF}°</span>
+            </div>
+            <Btn accent={getZone(selectedTempF).hex} onClick={()=>{setSessionPhase("heating");if(navigator.vibrate)navigator.vibrate([80,60,80,60,120])}}>⚡ Begin Session</Btn>
+          </div>
+        )}
+
+        {/* HEATING / ACTIVE */}
+        {(sessionPhase==="heating"||sessionPhase==="active")&&(
+          <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div style={{position:"relative",width:220,height:220,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:32}}>
+              <div style={{position:"absolute",inset:0,borderRadius:"50%",border:`3px solid ${zone.hex}`,opacity:0.3}}/>
+              <div style={{width:160,height:160,borderRadius:"50%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(4,4,12,0.9)",border:`2px solid ${zone.hex}40`,boxShadow:`0 0 50px ${zone.hex}40`}}>
+                {sessionPhase==="heating"?<span style={{fontSize:48}}>🔥</span>:<>
+                  <span style={{fontSize:52,fontWeight:200,fontFamily:"'JetBrains Mono',monospace",color:"white"}}>{timeLeft}</span>
+                  {totalDuration<=10&&<div style={{position:"absolute",bottom:22,left:"50%",transform:"translateX(-50%)",display:"flex",alignItems:"center",gap:4}}>
+                    <div style={{width:4,height:4,borderRadius:"50%",background:"#fbbf24"}}/>
+                    <span style={{fontSize:7,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>Terp Zone</span>
+                    <div style={{width:4,height:4,borderRadius:"50%",background:"#fbbf24"}}/>
+                  </div>}
+                </>}
+                <span style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:6}}>{sessionPhase==="heating"?"heating...":`${zone.name} · ${effectiveTempF}°F`}</span>
+              </div>
+            </div>
+            <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,marginBottom:4}}>{sessionPhase==="heating"?"Wait for the double buzz...":timeLeft<=0?"Timer done — end when ready":"Enjoy your session"}</p>
+            {/* Terp Timer Bar */}
+            {sessionPhase==="active"&&totalDuration<=10&&(
+              <div style={{width:"80%",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:7,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>Terp Zone</span>
+                  <span style={{fontSize:7,fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{10-totalDuration}s</span>
+                </div>
+                <div style={{height:3,borderRadius:2,background:"rgba(251,191,36,0.1)",overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:2,background:"#fbbf24",width:`${(1-totalDuration/10)*100}%`}}/>
+                </div>
+              </div>
+            )}
+            {/* Spotify Player during session */}
+            {sessionPhase==="active"&&sessionData.spotifyUrl&&(()=>{
+              const m=sessionData.spotifyUrl.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+              if(!m)return null;
+              return <div style={{width:"100%",marginBottom:16,borderRadius:12,overflow:"hidden"}}><iframe src={`https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0`} width="100%" height="80" frameBorder="0" allow="encrypted-media" style={{borderRadius:12}}/></div>;
+            })()}
+            {sessionPhase==="heating"?(
+              <div style={{width:"100%",display:"flex",flexDirection:"column",gap:10}}>
+                <Btn accent="white" onClick={()=>{setSessionPhase("active");setTimeLeft(30);if(navigator.vibrate)navigator.vibrate([100,80,150,80,250])}}>Start Inhale Timer</Btn>
+                <Btn secondary onClick={onClose}>Cancel</Btn>
+              </div>
+            ):(
+              <div style={{width:"100%",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {[{label:"+30s",icon:"⏱",fn:()=>setTimeLeft(p=>p+30)},{label:isPaused?"Resume":"Pause",icon:isPaused?"▶":"⏸",fn:()=>setIsPaused(p=>!p)},{label:"+18°F",icon:"🔥",fn:()=>setBoosts(p=>p+1)}].map(b=><button key={b.label} onClick={b.fn} style={{padding:"14px 0",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"white",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:500}}><span style={{fontSize:16}}>{b.icon}</span>{b.label}</button>)}
+                </div>
+                <Btn accent="white" onClick={()=>setSessionPhase("effects")}>End Session</Btn>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* EFFECTS */}
+        {sessionPhase==="effects"&&(
+          <div className="fu fu1" style={{flex:1}}>
+            <div style={{textAlign:"center",marginBottom:24}}><h2 style={{fontSize:22,fontWeight:300,letterSpacing:4,textTransform:"uppercase"}}>How Do You Feel?</h2></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:24}}>
+              {EFFECTS_LIST.map(e=>{const sel=ratingData.effects.includes(e.id);return <button key={e.id} onClick={()=>setRatingData(p=>({...p,effects:sel?p.effects.filter(x=>x!==e.id):[...p.effects,e.id]}))} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,padding:"14px 8px",borderRadius:14,cursor:"pointer",background:sel?"rgba(255,255,255,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${sel?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.06)"}`,color:sel?"white":"rgba(255,255,255,0.4)"}}><span style={{fontSize:22}}>{e.emoji}</span><span style={{fontSize:8,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,textAlign:"center",lineHeight:1.3}}>{e.label}</span></button>})}
+            </div>
+            <Btn accent="white" onClick={()=>setSessionPhase("rating")}>Next — Rate It</Btn>
+            <Btn secondary onClick={()=>setSessionPhase("rating")} style={{marginTop:8}}>Skip</Btn>
+          </div>
+        )}
+
+        {/* RATING */}
+        {sessionPhase==="rating"&&(
+          <div className="fu fu1" style={{flex:1}}>
+            <div style={{textAlign:"center",marginBottom:24}}><h2 style={{fontSize:22,fontWeight:300,letterSpacing:4,textTransform:"uppercase"}}>Rate Session</h2></div>
+            <div style={{display:"flex",flexDirection:"column",gap:18,marginBottom:24}}>
+              {[{key:"vapor",label:"Vapor Quality"},{key:"taste",label:"Taste / Terps"},{key:"potency",label:"Potency"},{key:"rating",label:"Overall"}].map(m=><div key={m.key}><ML>{m.label}</ML><div style={{display:"flex",gap:6}}>{[1,2,3,4,5].map(s=><button key={s} onClick={()=>setRatingData(p=>({...p,[m.key]:s}))} style={{background:"none",border:"none",cursor:"pointer",padding:2}}><Leaf size={24} filled={s<=ratingData[m.key]} accent={accent}/></button>)}</div></div>)}
+              <div><ML>Notes</ML><Input rows={2} value={ratingData.notes} onChange={e=>setRatingData(p=>({...p,notes:e.target.value}))} placeholder="Flavor, effects, thoughts..."/></div>
+            </div>
+            {/* Flavor Tags — post-dab */}
+            <ML>Flavor Notes</ML>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20}}>
+              {FLAVORS.map(f=>{const sel=(ratingData.flavors||[]).includes(f);return(
+                <button key={f} onClick={()=>setRatingData(p=>({...p,flavors:sel?(p.flavors||[]).filter(x=>x!==f):[...(p.flavors||[]),f]}))}
+                  style={{padding:"5px 10px",borderRadius:10,fontSize:9,letterSpacing:1,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:500,WebkitTapHighlightColor:"transparent",
+                    background:sel?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${sel?accent+"40":"rgba(255,255,255,0.06)"}`,color:sel?accent:"rgba(255,255,255,0.35)"}}>
+                  {f}
+                </button>
+              )})}
+            </div>
+            <Btn accent="white" onClick={completeSession}>Save Session</Btn>
+            <Btn secondary onClick={completeSession} style={{marginTop:8}}>Skip & Save</Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// STASH TAB (includes #6 Repeat Last)
+// ═══════════════════════════════════════════════════════
+// ─── Flip Session Card ─────────────────────────────────
+// Tap = flip to show stats back. Long press (300ms) = open full detail modal.
+function FlipSessionCard({ item, accent, onSelect }) {
+  const [flipped, setFlipped] = useState(false);
+  const [frontH, setFrontH] = useState(0);
+  const [backH, setBackH] = useState(0);
+  const frontRef = useRef(null);
+  const backRef = useRef(null);
+  const pressTimer = useRef(null);
+  const didLongPress = useRef(false);
+
+  const z = getZone(item.finalTempF || 500);
+
+  useEffect(() => {
+    if (frontRef.current) setFrontH(frontRef.current.offsetHeight);
+    if (backRef.current) setBackH(backRef.current.offsetHeight);
+  }, [item]);
+
+  const onPointerDown = () => {
+    didLongPress.current = false;
+    pressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      onSelect(item);
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 300);
+  };
+  const onPointerUp = () => {
+    clearTimeout(pressTimer.current);
+    if (!didLongPress.current) {
+      setFlipped(f => !f);
+      // Re-measure after flip in case content changed
+      requestAnimationFrame(() => {
+        if (frontRef.current) setFrontH(frontRef.current.offsetHeight);
+        if (backRef.current) setBackH(backRef.current.offsetHeight);
+      });
+    }
+  };
+  const onPointerLeave = () => { clearTimeout(pressTimer.current); };
+
+  return (
+    <div style={{ perspective: 800, WebkitTapHighlightColor: "transparent" }}>
+      <div
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerLeave}
+        style={{
+          position: "relative", transformStyle: "preserve-3d", cursor: "pointer",
+          transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+          transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s ease",
+          height: flipped ? (backH || "auto") : (frontH || "auto"),
+        }}
+      >
+        {/* ─── FRONT ─── */}
+        <div ref={frontRef} style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", position: "absolute", top: 0, left: 0, right: 0 }}>
+          <Glass style={{ padding: 0, overflow: "hidden" }}>
+            {item.photo && <div style={{ width: "100%", height: 100, overflow: "hidden" }}><img src={item.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></div>}
+            <div style={{ padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" }}>{item.brand}</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, marginTop: 3 }}>{item.strain}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                    <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono',monospace" }}>{item.type}</span>
+                    <span style={{ fontSize: 9, color: "rgba(255,255,255,0.15)" }}>·</span>
+                    <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono',monospace" }}>{item.classification}</span>
+                  </div>
+                  {item.notes && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontStyle: "italic", marginTop: 6, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{item.notes}"</div>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: z.hex }} /><span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{item.finalTempF}°</span></div>
+                  <div style={{ display: "flex", gap: 1 }}>{[1, 2, 3, 4, 5].map(s => <Leaf key={s} size={9} filled={s <= item.rating} accent={accent} />)}</div>
+                  <span style={{ fontSize: 8, color: "rgba(255,255,255,0.2)", fontFamily: "'JetBrains Mono',monospace" }}>{item.date}</span>
+                </div>
+              </div>
+              {item.effects?.length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>{item.effects.slice(0, 4).map(eid => { const e = EFFECTS_LIST.find(x => x.id === eid); return e ? <span key={eid} style={{ fontSize: 8, padding: "3px 7px", borderRadius: 10, background: `${accent}12`, color: accent, fontFamily: "'JetBrains Mono',monospace" }}>{e.emoji} {e.label}</span> : null; })}{item.effects.length > 4 && <span style={{ fontSize: 8, color: "rgba(255,255,255,0.2)" }}>+{item.effects.length - 4}</span>}</div>}
+              {item.flavors?.length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>{item.flavors.slice(0, 4).map(f => <span key={f} style={{ fontSize: 7, padding: "2px 6px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)", fontFamily: "'JetBrains Mono',monospace" }}>{f}</span>)}{item.flavors.length > 4 && <span style={{ fontSize: 7, color: "rgba(255,255,255,0.15)" }}>+{item.flavors.length - 4}</span>}</div>}
+            </div>
+            <div style={{ position: "absolute", bottom: 6, right: 10, fontSize: 7, color: "rgba(255,255,255,0.12)", fontFamily: "'JetBrains Mono',monospace" }}>tap to flip · hold to open</div>
+          </Glass>
+        </div>
+
+        {/* ─── BACK (stats) ─── */}
+        <div ref={backRef} style={{
+          backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+          transform: "rotateY(180deg)", position: "absolute", top: 0, left: 0, right: 0,
+        }}>
+          <Glass style={{ overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" }}>{item.brand}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>{item.strain}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: z.hex }} />
+                <span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: "rgba(255,255,255,0.5)" }}>{z.name} · {item.finalTempF}°F</span>
+              </div>
+            </div>
+            {/* Rating bars */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              {[{ k: "vapor", l: "Vapor" }, { k: "taste", l: "Taste" }, { k: "potency", l: "Potency" }, { k: "rating", l: "Overall" }].map(m => (
+                <div key={m.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", fontFamily: "'JetBrains Mono',monospace", width: 44 }}>{m.l}</span>
+                  <div style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 2, width: `${(item[m.k] || 0) * 20}%`, background: accent }} />
+                  </div>
+                  <span style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", fontFamily: "'JetBrains Mono',monospace", width: 10, textAlign: "right" }}>{item[m.k] || 0}</span>
+                </div>
+              ))}
+            </div>
+            {/* Quick stats row */}
+            <div style={{ display: "flex", gap: 8, marginBottom: item.effects?.length > 0 ? 10 : 0 }}>
+              <div style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>{item.duration > 0 ? `${Math.floor(item.duration / 60)}:${(item.duration % 60).toString().padStart(2, "0")}` : "—"}</div>
+                <div style={{ fontSize: 6, color: "rgba(255,255,255,0.2)", letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace", marginTop: 2 }}>Duration</div>
+              </div>
+              <div style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>{item.timeOfDay || "—"}</div>
+                <div style={{ fontSize: 6, color: "rgba(255,255,255,0.2)", letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace", marginTop: 2 }}>Time</div>
+              </div>
+              <div style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>{item.date}</div>
+                <div style={{ fontSize: 6, color: "rgba(255,255,255,0.2)", letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace", marginTop: 2 }}>Date</div>
+              </div>
+            </div>
+            {item.effects?.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{item.effects.map(eid => { const e = EFFECTS_LIST.find(x => x.id === eid); return e ? <span key={eid} style={{ fontSize: 7, padding: "3px 7px", borderRadius: 8, background: `${accent}12`, color: accent, fontFamily: "'JetBrains Mono',monospace" }}>{e.emoji} {e.label}</span> : null; })}</div>}
+            <div style={{ position: "absolute", bottom: 6, right: 10, fontSize: 7, color: "rgba(255,255,255,0.12)", fontFamily: "'JetBrains Mono',monospace" }}>tap to flip · hold to open</div>
+          </Glass>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashSearch,onSelect,onRepeat,strainMap,setStrainView,setTab}) {
+  const [viewMode, setViewMode] = useState("list"); // list or shelf
+  const lastSession = stash[0];
+  let filtered = stash;
+  if(stashFilter!=="All"){if(FILTER_MAP[stashFilter])filtered=filtered.filter(s=>FILTER_MAP[stashFilter].includes(s.type));else filtered=filtered.filter(s=>!Object.values(FILTER_MAP).flat().includes(s.type))}
+  if(stashSearch.trim()){const q=stashSearch.toLowerCase();filtered=filtered.filter(s=>s.strain?.toLowerCase().includes(q)||s.brand?.toLowerCase().includes(q))}
+
+  return (
+    <div>
+      <div className="fu fu1" style={{padding:"22px 0 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div><h2 style={{fontSize:20,fontWeight:600,letterSpacing:-0.3}}>Session Log</h2><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>{stash.length} dab{stash.length!==1?"s":""} logged</p></div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {/* View toggle */}
+          <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+            <button onClick={()=>setViewMode("list")} style={{padding:"8px 12px",background:viewMode==="list"?`${accent}20`:"transparent",border:"none",color:viewMode==="list"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>☰</button>
+            <button onClick={()=>setViewMode("shelf")} style={{padding:"8px 12px",background:viewMode==="shelf"?`${accent}20`:"transparent",border:"none",color:viewMode==="shelf"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>⊞</button>
+          </div>
+          {Object.keys(strainMap).length>0&&<button onClick={()=>switchTab("encyclopedia")} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>Encyclopedia →</button>}
+        </div>
+      </div>
+
+      {/* Feature #6: Repeat Last */}
+      {lastSession&&lastSession.brand!=="Quick"&&(
+        <Glass className="fu fu2" glow={accent} onClick={()=>onRepeat(lastSession)} style={{padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}>
+          <div style={{width:36,height:36,borderRadius:"50%",background:`${accent}15`,border:`1.5px solid ${accent}40`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:16}}>🔄</span></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:9,color:accent,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>Repeat Last</div>
+            <div style={{fontSize:12,fontWeight:500,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lastSession.brand} — {lastSession.strain}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}><div style={{width:6,height:6,borderRadius:"50%",background:getZone(lastSession.finalTempF||510).hex}}/><span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{lastSession.finalTempF}°</span></div>
+        </Glass>
+      )}
+
+      {stash.length===0?(
+        <div style={{textAlign:"center",padding:"60px 0"}}><div style={{fontSize:44,opacity:0.15,marginBottom:12}}>🌿</div><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>No sessions yet. Hit the flame to start.</p></div>
+      ):(
+        <>
+          <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+            {["All","Rosin","Hash","Resin","Other"].map(f=><button key={f} onClick={()=>setStashFilter(f)} style={{padding:"6px 14px",borderRadius:20,whiteSpace:"nowrap",fontSize:9,letterSpacing:2,textTransform:"uppercase",fontWeight:600,cursor:"pointer",flexShrink:0,fontFamily:"'JetBrains Mono',monospace",background:stashFilter===f?accent:"transparent",color:stashFilter===f?"#000":"rgba(255,255,255,0.35)",border:`1px solid ${stashFilter===f?accent:accent+"30"}`}}>{f}</button>)}
+          </div>
+          <div style={{position:"relative",marginBottom:14}}>
+            <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"rgba(255,255,255,0.2)"}}>⌕</span>
+            <Input value={stashSearch} onChange={e=>setStashSearch(e.target.value)} placeholder="Search strain or brand..." style={{paddingLeft:34}} />
+            {stashSearch&&<button onClick={()=>setStashSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:14}}>✕</button>}
+          </div>
+          {viewMode==="shelf"?(
+            /* Jar Shelf View (#25) */
+            <div>
+              <ML>{Object.keys(strainMap).length} Unique Strains</ML>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                {Object.entries(strainMap).sort((a,b)=>b[1].sessions.length-a[1].sessions.length).map(([key,data])=>{
+                  const avgR=data.sessions.filter(s=>s.rating>0).length?(data.sessions.reduce((a,s)=>a+(s.rating||0),0)/data.sessions.filter(s=>s.rating>0).length):0;
+                  const photo=data.sessions.find(s=>s.photo)?.photo;
+                  return(
+                    <Glass key={key} onClick={()=>setStrainView(key)} style={{padding:0,cursor:"pointer",overflow:"hidden",textAlign:"center"}}>
+                      <div style={{width:"100%",height:70,background:`${accent}08`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                        {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover",opacity:0.7}}/>:
+                        <div style={{fontSize:28,opacity:0.15}}>🫙</div>}
+                      </div>
+                      <div style={{padding:"8px 6px"}}>
+                        <div style={{fontSize:8,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{data.strain}</div>
+                        <div style={{fontSize:7,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{data.brand}</div>
+                        <div style={{display:"flex",justifyContent:"center",gap:1,marginTop:4}}>{[1,2,3,4,5].map(s=><Leaf key={s} size={6} filled={s<=Math.round(avgR)} accent={accent}/>)}</div>
+                        <div style={{fontSize:7,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{data.sessions.length}×</div>
+                      </div>
+                    </Glass>
+                  );
+                })}
+              </div>
+            </div>
+          ):(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {filtered.length===0?<div style={{textAlign:"center",padding:"40px 0"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{stashSearch?`No results for "${stashSearch}"`:"No sessions in this category"}</p></div>
+            :filtered.map(item=><FlipSessionCard key={item.id} item={item} accent={accent} onSelect={onSelect} />)}
+          </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// STATS TAB
+// ═══════════════════════════════════════════════════════
+function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg}) {
+  const tempCounts=stash.reduce((a,s)=>{const z=getZone(s.finalTempF||500).name;a[z]=(a[z]||0)+1;return a},{});
+  if(!stash.length) return <div style={{textAlign:"center",padding:"60px 0"}}><div style={{fontSize:44,opacity:0.15,marginBottom:12}}>📊</div><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>No sessions yet</p></div>;
+  return (
+    <div>
+      <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Stats</h2></div>
+      <Glass className="fu fu2" glow={accent} style={{marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}>
+          <div style={{width:46,height:46,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,background:`${accent}18`,border:`1.5px solid ${accent}50`}}>{lvl.emoji}</div>
+          <div style={{flex:1}}><div style={{display:"flex",alignItems:"baseline",gap:8}}><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:accent}}>Level {lvl.level}</span><span style={{fontSize:16,fontWeight:500}}>{lvl.title}</span></div><div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{xp.toLocaleString()} XP</div></div>
+        </div>
+        {lvl.next&&<div><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{lvl.progressXP}/{lvl.neededXP} XP</span><span style={{fontSize:8,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>Next: {lvl.next.title}</span></div><div style={{height:8,borderRadius:4,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}><div style={{height:"100%",borderRadius:4,width:`${lvl.progress*100}%`,background:accent,transition:"width 1s"}}/></div></div>}
+      </Glass>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        {[{l:"Sessions",v:stash.length},{l:"Streak",v:streak+"d"},{l:"Avg Rating",v:avg("rating")!=="—"?avg("rating")+"★":"—"},{l:"Time",v:Math.floor(stash.reduce((a,b)=>a+(b.duration||0),0)/60)+"m"}].map((s,i)=><Glass key={i} style={{padding:16}}><div style={{fontSize:20,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{s.l}</div></Glass>)}
+      </div>
+      <Glass style={{marginBottom:14}}><ML>Temp Distribution</ML><div style={{display:"flex",alignItems:"flex-end",gap:8,height:70,marginTop:10}}>{HEAT_ZONES.map(z=>{const c=tempCounts[z.name]||0;const mx=Math.max(...Object.values(tempCounts),1);return <div key={z.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{c}</span><div style={{width:"100%",height:`${(c/mx)*50}px`,borderRadius:5,background:`linear-gradient(to top,${z.hex}40,${z.hex}10)`,border:`1px solid ${z.hex}20`}}/><div style={{width:7,height:7,borderRadius:"50%",background:z.hex}}/></div>})}</div></Glass>
+      <Glass style={{marginBottom:14}}><ML>Achievements · {unlocked.length}/{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).length}</ML><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{ACHIEVEMENTS.filter(a=>!a.secret||a.check(stash)).map(a=>{const earned=a.check(stash);return <div key={a.id} title={a.title} style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:earned?`${accent}15`:"rgba(255,255,255,0.02)",border:`1px solid ${earned?accent+"40":"rgba(255,255,255,0.05)"}`,fontSize:18,opacity:earned?1:0.3}}>{a.secret&&!earned?"❓":a.emoji}</div>})}</div></Glass>
+
+      {/* Potency Prediction */}
+      {stash.length>=5&&(()=>{
+        const brands={};
+        stash.forEach(s=>{if(s.brand&&s.rating>0){if(!brands[s.brand])brands[s.brand]={total:0,count:0,strains:new Set()};brands[s.brand].total+=s.rating;brands[s.brand].count++;brands[s.brand].strains.add(s.strain)}});
+        const ranked=Object.entries(brands).filter(([,v])=>v.count>=2).map(([name,v])=>({name,avg:(v.total/v.count).toFixed(1),count:v.count,strains:v.strains.size})).sort((a,b)=>b.avg-a.avg).slice(0,3);
+        if(!ranked.length)return null;
+        // Find best temp zone
+        const zoneRatings={};
+        stash.forEach(s=>{if(s.rating>0){const z=getZone(s.finalTempF||500).name;if(!zoneRatings[z])zoneRatings[z]={total:0,count:0};zoneRatings[z].total+=s.rating;zoneRatings[z].count++}});
+        const bestZone=Object.entries(zoneRatings).map(([n,v])=>({name:n,avg:v.total/v.count})).sort((a,b)=>b.avg-a.avg)[0];
+        return(
+          <Glass style={{marginBottom:14}}>
+            <ML>Potency Prediction</ML>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5,marginBottom:12}}>Based on your {stash.length} sessions, here's what hits hardest:</p>
+            {ranked.map((b,i)=>(
+              <div key={b.name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<ranked.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
+                <span style={{fontSize:14,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:i===0?accent:"rgba(255,255,255,0.4)",width:20}}>{i===0?"🏆":i===1?"🥈":"🥉"}</span>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:500}}>{b.name}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{b.count} sessions · {b.strains} strains</div></div>
+                <span style={{fontSize:14,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{b.avg}★</span>
+              </div>
+            ))}
+            {bestZone&&<div style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)"}}>
+              <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>Your sweet spot: </span>
+              <span style={{fontSize:10,fontWeight:600}}>{bestZone.name}</span>
+              <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}> zone — avg {bestZone.avg.toFixed(1)}★</span>
+            </div>}
+          </Glass>
+        );
+      })()}
+
+      {/* Constellation Map */}
+      {stash.length>=3&&(()=>{
+        const strains={};
+        stash.forEach(s=>{
+          const key=`${s.brand}|||${s.strain}`;
+          if(!strains[key])strains[key]={brand:s.brand,strain:s.strain,count:0,avgRating:0,total:0,type:s.type};
+          strains[key].count++;strains[key].total+=(s.rating||0);
+        });
+        const stars=Object.values(strains).map(s=>({...s,avgRating:s.count>0?s.total/s.count:0}));
+        if(stars.length<3)return null;
+        // Position each star using a seeded hash for consistent placement
+        const hash=(str)=>{let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0}return h};
+        const positioned=stars.map(s=>{
+          const h1=hash(s.brand+s.strain);const h2=hash(s.strain+s.brand);
+          return{...s,x:15+Math.abs(h1%280),y:15+Math.abs(h2%170),size:Math.max(2,Math.min(6,s.count*1.5+s.avgRating*0.5))};
+        });
+        // Draw lines between same-brand strains
+        const brandGroups={};positioned.forEach(s=>{if(!brandGroups[s.brand])brandGroups[s.brand]=[];brandGroups[s.brand].push(s)});
+        const lines=[];
+        Object.values(brandGroups).forEach(group=>{for(let i=0;i<group.length-1;i++)lines.push({x1:group[i].x,y1:group[i].y,x2:group[i+1].x,y2:group[i+1].y})});
+        return(
+          <Glass style={{marginBottom:14}}>
+            <ML>Strain Constellation</ML>
+            <p style={{fontSize:9,color:"rgba(255,255,255,0.25)",marginBottom:8}}>Each star is a strain. Lines connect same brand. Bigger = more sessions.</p>
+            <svg viewBox="0 0 310 200" style={{width:"100%",height:"auto"}}>
+              {lines.map((l,i)=><line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={accent} strokeWidth="0.5" opacity="0.2"/>)}
+              {positioned.map((s,i)=>(
+                <g key={i}>
+                  <circle cx={s.x} cy={s.y} r={s.size+3} fill={accent} opacity="0.08"/>
+                  <circle cx={s.x} cy={s.y} r={s.size} fill={s.avgRating>=4?accent:s.avgRating>=3?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.2)"}/>
+                  <text x={s.x} y={s.y+s.size+8} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize="4" fontFamily="'JetBrains Mono',monospace">{s.strain.slice(0,12)}</text>
+                </g>
+              ))}
+            </svg>
+          </Glass>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// CARE TAB
+// ═══════════════════════════════════════════════════════
+function CareTab({profile,accent,onClean,setProfile}) {
+  const threshold = profile.cleanThreshold || 30;
+  const pct=Math.min(((profile.dabsSinceClean||0)/threshold)*100,100);
+  let sc="#4ade80";if(pct>60)sc="#facc15";if(pct>=100)sc="#ef4444";
+  const circ=283,off=circ-(circ*pct)/100;
+  return (
+    <div>
+      <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Peak Care</h2></div>
+      <Glass className="fu fu2" style={{textAlign:"center",marginBottom:18}}>
+        <div style={{position:"relative",width:160,height:160,margin:"0 auto 18px"}}>
+          <svg style={{width:"100%",height:"100%",transform:"rotate(-90deg)"}} viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="transparent" stroke="rgba(255,255,255,0.04)" strokeWidth="3.5"/><circle cx="50" cy="50" r="45" fill="transparent" stroke={sc} strokeWidth="3.5" strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round" style={{}}/></svg>
+          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:34,fontWeight:200,fontFamily:"'JetBrains Mono',monospace"}}>{profile.dabsSinceClean||0}</span><span style={{fontSize:8,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>Sessions</span></div>
+        </div>
+        <h3 style={{fontSize:16,fontWeight:500,marginBottom:6}}>{pct>=100?"Time for an ISO Soak":"Chamber is Healthy"}</h3>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5,maxWidth:240,margin:"0 auto 18px"}}>{pct>=100?"Drop your chamber in 99% ISO.":`~${threshold-(profile.dabsSinceClean||0)} sessions until cleaning.`}</p>
+        <Btn accent={pct>=100?"white":null} secondary={pct<100} onClick={onClean}>{pct>=100?"Log ISO Soak":"Cleaned it Early"}</Btn>
+        {/* Threshold slider */}
+        <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
+          <ML style={{marginBottom:0,whiteSpace:"nowrap"}}>Clean at</ML>
+          <input type="range" min={10} max={60} value={threshold} onChange={e=>setProfile(p=>({...p,cleanThreshold:Number(e.target.value)}))} style={{flex:1,accentColor:accent}} />
+          <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",minWidth:30,textAlign:"right"}}>{threshold}</span>
+        </div>
+      </Glass>
+
+      {/* Cleaning Guide */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Cleaning Guide</ML>
+            <div style={{fontSize:10,color:accent,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,marginBottom:12}}>Chamber Soak</div>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              {[
+                {step:"1",title:"Remove the Chamber",desc:"Let your Peak cool completely. Gently pull the atomizer chamber straight up and out of the base."},
+                {step:"2",title:"Prepare ISO Bath",desc:"Pour enough 99% isopropyl alcohol into a small glass or container to fully submerge the chamber. Do NOT use less than 91%."},
+                {step:"3",title:"Soak 20–30 Minutes",desc:"Drop the chamber into the ISO. Let it sit — don't rush this. For heavy buildup, soak up to an hour."},
+                {step:"4",title:"Agitate Gently",desc:"After soaking, swirl the chamber around in the ISO to loosen any remaining residue. Use a cotton swab on stubborn spots."},
+                {step:"5",title:"Rinse & Dry",desc:"Remove the chamber and rinse with warm water. Set it on a clean paper towel and let it air dry completely — at least 10 minutes."},
+                {step:"6",title:"Clean the Base Connection",desc:"While the chamber dries, use an ISO-dipped cotton swab to clean the connection pins inside the base where the atomizer sits."},
+                {step:"7",title:"Reassemble",desc:"Once everything is bone dry, drop the chamber back in. Run an empty heat cycle on Blue to burn off any residual moisture."},
+              ].map(s => (
+                <div key={s.step} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:`${accent}20`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:9,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:accent}}>{s.step}</div>
+                  <div><div style={{fontSize:12,fontWeight:500,marginBottom:2}}>{s.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{s.desc}</div></div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"18px 0"}} />
+
+            <div style={{fontSize:10,color:accent,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,marginBottom:12}}>Pro Tips</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[
+                {icon:"🧊",tip:"Keep a dedicated jar with ISO ready to go — drop your chamber in right after your last session while you're cleaning up."},
+                {icon:"🔥",tip:"Running hotter temps (Red/White) leaves more residue. Clean every 20 sessions if you run hot, 30+ if you stay on Blue/Green."},
+                {icon:"🧹",tip:"Quick swab the chamber with a dry Q-tip after every 2-3 sessions. Prevents buildup from hardening and makes deep cleans easier."},
+                {icon:"⚠️",tip:"Never submerge the entire Peak base in liquid. Only the removable chamber and cap should be soaked."},
+                {icon:"💧",tip:"If you see rainbowing (rainbow discoloration) on the chamber walls, that's normal oxidation — not dirt. ISO won't remove it and it doesn't affect performance."},
+                {icon:"🔄",tip:"Replace your chamber every 6-12 months depending on use. Performance degrades over time even with perfect maintenance."},
+              ].map((t, i) => (
+                <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{t.icon}</span>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",lineHeight:1.5}}>{t.tip}</div>
+                </div>
+              ))}
+            </div>
+      </Glass>
+
+      {(profile.cleanHistory||[]).length>0&&<div><ML>Clean History</ML>{(profile.cleanHistory||[]).slice(0,5).map((e,i)=><Glass key={i} style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:"#4ade80",fontSize:14}}>✓</span><span style={{fontSize:12,fontWeight:500}}>ISO Soak</span></div><div style={{textAlign:"right"}}><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{e.date}</div></div></Glass>)}</div>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// PROFILE TAB (#9 stats summary, #18 custom profiles)
+// ═══════════════════════════════════════════════════════
+function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile}) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [previewFrame, setPreviewFrame] = useState(null);
+  const accent2 = profile.accent2 || null;
+  const accentGrad = accent2 ? `linear-gradient(135deg, ${accent}, ${accent2})` : accent;
+  const [faqOpen, setFaqOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
+  const [ticketType, setTicketType] = useState("bug");
+  const [ticketText, setTicketText] = useState("");
+  const [ticketSent, setTicketSent] = useState(false);
+  const [tickets, setTickets] = useState([]);
+
+  // Load tickets from storage on mount
+  useEffect(() => { (async () => { try { const t = await storageGet("puffco-tickets", []); setTickets(t); } catch {} })(); }, []);
+  const submitTicket = async () => {
+    if (!ticketText.trim()) return;
+    const ticket = { id: Date.now(), type: ticketType, text: ticketText.trim(), date: new Date().toISOString().split("T")[0], status: "open" };
+    const updated = [ticket, ...tickets];
+    setTickets(updated);
+    await storageSet("puffco-tickets", updated);
+    setTicketText("");
+    setTicketSent(true);
+    setTimeout(() => setTicketSent(false), 3000);
+  };
+  const avatarRef = useRef(null);
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const dataUrl = await compressPhoto(file, 256);
+    setProfile(p => ({ ...p, avatar: dataUrl }));
+  };
+
+  return (
+    <div>
+      <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Profile</h2></div>
+
+      {/* Avatar + Name — with photo upload */}
+      <input ref={avatarRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAvatarUpload} />
+      <Glass className="fu fu2" style={{textAlign:"center",marginBottom:14}}>
+        <div style={{position:"relative",width:72,height:72,margin:"0 auto 12px"}}>
+          {/* PFP Frame */}
+          <PfpFrame frameId={profile.frame || "none"} size={72} accent={accent} accentGrad={accentGrad} />
+          <div onClick={() => avatarRef.current?.click()}
+            style={{width:72,height:72,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:600,cursor:"pointer",overflow:"hidden"}}>
+            {profile.avatar ? (
+              <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+            ) : (
+              <span>{profile.name ? profile.name[0].toUpperCase() : "?"}</span>
+            )}
+          </div>
+          {/* Camera badge */}
+          <button onClick={() => avatarRef.current?.click()}
+            style={{position:"absolute",bottom:-2,right:-2,width:24,height:24,borderRadius:"50%",background:accentGrad,border:"2px solid #04040c",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"transform 0.2s"}}
+            onMouseDown={e => e.currentTarget.style.transform="scale(0.9)"}
+            onMouseUp={e => e.currentTarget.style.transform="scale(1)"}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
+          {/* Remove avatar option */}
+          {profile.avatar && (
+            <button onClick={(e) => {e.stopPropagation(); setProfile(p => ({...p, avatar:""}))}}
+              style={{position:"absolute",top:-2,right:-2,width:20,height:20,borderRadius:"50%",background:"rgba(239,68,68,0.9)",border:"2px solid #04040c",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:10,color:"white",lineHeight:1}}>✕</button>
+          )}
+        </div>
+        <div style={{fontSize:18,fontWeight:500,marginBottom:4}}>{profile.name||"Set Your Name"}</div>
+        <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase"}}>{profile.device} · {stash.length} sessions</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}><span style={{fontSize:14}}>{lvl.emoji}</span><span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:accent,letterSpacing:1.5}}>Lv.{lvl.level} {lvl.title}</span></div>
+        <p style={{fontSize:9,color:"rgba(255,255,255,0.15)",marginTop:8,fontFamily:"'JetBrains Mono',monospace"}}>Tap photo to change</p>
+      </Glass>
+
+      {/* Feature #9: Profile Stats Summary */}
+      {profileStats&&(
+        <Glass className="fu fu3" style={{marginBottom:14}}>
+          <ML>At a Glance</ML>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            {[{l:"Avg",v:profileStats.avgRating!=="—"?profileStats.avgRating+"★":"—"},{l:"Brands",v:profileStats.brands},{l:"Strains",v:profileStats.strains}].map((s,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:18,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{s.l}</div></div>)}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            {profileStats.favZone&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Fav Temp</div><div style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:HEAT_ZONES.find(z=>z.name===profileStats.favZone)?.hex}}/><span style={{fontSize:12,fontWeight:600}}>{profileStats.favZone}</span></div></div>}
+            {profileStats.topStrain&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Top Strain</div><div style={{fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profileStats.topStrain}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2}}>{profileStats.topStrainCount}×</div></div>}
+          </div>
+        </Glass>
+      )}
+
+      {/* Settings */}
+      <Glass style={{marginBottom:14}}><ML>Display Name</ML><Input value={profile.name||""} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name..."/></Glass>
+      <Glass style={{marginBottom:14}}><ML>Device</ML><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><button key={d} onClick={()=>setProfile(p=>({...p,device:d}))} style={{padding:10,borderRadius:10,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:profile.device===d?accent:"rgba(255,255,255,0.03)",color:profile.device===d?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${profile.device===d?accent:"rgba(255,255,255,0.06)"}`}}>{d}</button>)}</div></Glass>
+
+      {/* Feature #18: Custom Heat Profiles */}
+      <Glass style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <ML style={{marginBottom:0}}>Heat Profiles</ML>
+          <button onClick={()=>setEditingProfile({id:Date.now(),name:"",tempF:510,time:60,color:accent,isNew:true})} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>+ New</button>
+        </div>
+        {heatProfiles.map(p=>{const isActive=p.id===activeProfileId;return(
+          <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,marginBottom:6,cursor:"pointer",background:isActive?`${p.color}0a`:"transparent",border:`1px solid ${isActive?p.color+"40":"rgba(255,255,255,0.04)"}`}} onClick={()=>setActiveProfileId(p.id)}>
+            <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,background:`radial-gradient(circle at 30% 30%,${p.color}40,${p.color}10)`,border:`1.5px solid ${p.color}55`,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:p.color}}/></div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:isActive?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)"}}>{p.name}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>{p.tempF}°F · {p.time}s</div></div>
+            <button onClick={e=>{e.stopPropagation();setEditingProfile({...p})}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.2)",cursor:"pointer",fontSize:12}}>✎</button>
+            {isActive&&<div style={{fontSize:7,color:p.color,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>active</div>}
+          </div>
+        )})}
+      </Glass>
+
+      {/* Heat Profile Editor Modal */}
+      {editingProfile&&(
+        <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.95)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:18}} onPointerDown={e=>{if(e.target===e.currentTarget)setEditingProfile(null)}}>
+          <div style={{width:"100%",maxWidth:440,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:24}}>
+            <ML>{editingProfile.isNew?"New Profile":"Edit Profile"}</ML>
+            <div style={{marginBottom:14}}><ML>Name</ML><Input value={editingProfile.name} onChange={e=>setEditingProfile(p=>({...p,name:e.target.value}))} placeholder="Profile name..."/></div>
+            <div style={{display:"flex",gap:12,marginBottom:14}}>
+              <div style={{flex:1}}><ML>Temp °F</ML><input type="number" min={400} max={620} value={editingProfile.tempF} onChange={e=>setEditingProfile(p=>({...p,tempF:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
+              <div style={{flex:1}}><ML>Time (s)</ML><input type="number" min={10} max={300} value={editingProfile.time} onChange={e=>setEditingProfile(p=>({...p,time:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
+            </div>
+            <ML>Color</ML>
+            <div style={{display:"flex",gap:8,marginBottom:20}}>
+              {["#3b82f6","#22c55e","#ef4444","#ffffff","#FDCB6E","#E17055","#a855f7","#06b6d4","#e84393"].map(c=><button key={c} onClick={()=>setEditingProfile(p=>({...p,color:c}))} style={{width:28,height:28,borderRadius:"50%",background:c,border:`2px solid ${editingProfile.color===c?"white":"rgba(255,255,255,0.1)"}`,cursor:"pointer",transform:editingProfile.color===c?"scale(1.15)":"scale(1)"}}/>)}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              {!editingProfile.isNew&&<Btn secondary onClick={()=>{setHeatProfiles(p=>p.filter(x=>x.id!==editingProfile.id));if(activeProfileId===editingProfile.id&&heatProfiles.length>1)setActiveProfileId(heatProfiles.find(x=>x.id!==editingProfile.id).id);setEditingProfile(null)}} style={{flex:1,color:"#ef4444"}}>Delete</Btn>}
+              <Btn accent={accent} disabled={!editingProfile.name.trim()} onClick={()=>{if(!editingProfile.name.trim())return;if(editingProfile.isNew){const{isNew,...rest}=editingProfile;setHeatProfiles(p=>[...p,rest])}else{setHeatProfiles(p=>p.map(x=>x.id===editingProfile.id?editingProfile:x))}setEditingProfile(null)}} style={{flex:1}}>Save</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accent Color */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Theme</ML>
+        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Solids</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {[
+            {hex:"#6C5CE7",name:"Hash"},
+            {hex:"#00B894",name:"Live Rosin"},
+            {hex:"#FDCB6E",name:"Rosin"},
+            {hex:"#E17055",name:"Shatter"},
+            {hex:"#0984e3",name:"Diamonds"},
+            {hex:"#e84393",name:"Terps"},
+            {hex:"#ffffff",name:"Ice Hash"},
+            {hex:"#a29bfe",name:"Bubble"},
+          ].map(t => {
+            const sel = profile.accent === t.hex;
+            return (
+              <button key={t.hex} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:null}))}
+                style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
+                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
+                }}>
+                <div style={{width:20,height:20,borderRadius:"50%",background:t.hex,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
+                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Ombré</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {[
+            {hex:"#6C5CE7",hex2:"#e84393",name:"Purple Haze"},
+            {hex:"#0984e3",hex2:"#00B894",name:"Ocean Breath"},
+            {hex:"#E17055",hex2:"#FDCB6E",name:"Sunset Dab"},
+            {hex:"#e84393",hex2:"#FDCB6E",name:"Pink Lemonade"},
+            {hex:"#00B894",hex2:"#FDCB6E",name:"Golden Leaf"},
+            {hex:"#6C5CE7",hex2:"#0984e3",name:"Blueberry Kush"},
+          ].map(t => {
+            const sel = profile.accent === t.hex && profile.accent2 === t.hex2;
+            return (
+              <button key={t.name} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:t.hex2}))}
+                style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
+                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
+                }}>
+                <div style={{width:20,height:20,borderRadius:"50%",background:`linear-gradient(135deg, ${t.hex}, ${t.hex2})`,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
+                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Special</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[
+            {hex:"#ff6b6b",hex2:"#ffa502",name:"Fire OG"},
+            {hex:"#a29bfe",hex2:"#ffffff",name:"Moonrock"},
+            {hex:"#2ed573",hex2:"#7bed9f",name:"Green Crack"},
+            {hex:"#ff4757",hex2:"#ff6348",name:"Cherry Pie"},
+          ].map(t => {
+            const sel = profile.accent === t.hex && profile.accent2 === t.hex2;
+            return (
+              <button key={t.name} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:t.hex2}))}
+                style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
+                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
+                }}>
+                <div style={{width:20,height:20,borderRadius:"50%",background:`linear-gradient(135deg, ${t.hex}, ${t.hex2})`,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
+                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Glass>
+
+      {/* PFP Frame Selector */}
+      <Glass style={{marginBottom:14}}>
+        <ML>Profile Frame</ML>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          {LEVELS.map(l => {
+            const isUnlocked = lvl.level >= l.level;
+            const selected = (profile.frame || "none") === l.frame;
+            return (
+              <button key={l.level} onClick={() => setPreviewFrame(l)}
+                style={{
+                  display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+                  padding:"12px 6px", borderRadius:12, cursor:"pointer",
+                  background: selected ? `${accent}15` : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${selected ? accent+"50" : "rgba(255,255,255,0.06)"}`,
+                  WebkitTapHighlightColor: "transparent",
+                }}>
+                <div style={{position:"relative",width:36,height:36,opacity:isUnlocked?1:0.4}}>
+                  <PfpFrame frameId={l.frame} size={36} accent={accent} accentGrad={accentGrad} />
+                  <div style={{width:36,height:36,borderRadius:"50%",background:`${accent}15`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>
+                    {l.emoji}
+                  </div>
+                </div>
+                <span style={{fontSize:7,letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",color:isUnlocked?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.25)",textAlign:"center",lineHeight:1.3}}>
+                  {l.frame === "none" ? "None" : `Lv.${l.level}`}
+                </span>
+                {selected && <div style={{width:4,height:4,borderRadius:"50%",background:accent}} />}
+              </button>
+            );
+          })}
+        </div>
+      </Glass>
+
+      {/* Frame Preview Modal */}
+      {previewFrame && (
+        <div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.97)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}} onPointerDown={e=>{if(e.target===e.currentTarget)setPreviewFrame(null)}}>
+          <button onClick={()=>setPreviewFrame(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+            {/* Large preview with avatar */}
+            <div style={{position:"relative",width:120,height:120}}>
+              <PfpFrame frameId={previewFrame.frame} size={120} accent={accent} accentGrad={accentGrad} />
+              <div style={{width:120,height:120,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:40,fontWeight:600,overflow:"hidden"}}>
+                {profile.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span>{profile.name?profile.name[0].toUpperCase():"?"}</span>}
+              </div>
+            </div>
+            {/* Frame info */}
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:8}}>{previewFrame.emoji}</div>
+              <div style={{fontSize:16,fontWeight:600}}>{previewFrame.frame==="none"?"No Frame":previewFrame.title}</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:2,textTransform:"uppercase",marginTop:4}}>Level {previewFrame.level} · {previewFrame.xp.toLocaleString()} XP</div>
+              {previewFrame.frame !== "none" && (
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:8}}>
+                  {lvl.level >= previewFrame.level ? "Unlocked" : `${previewFrame.xp - xp > 0 ? (previewFrame.xp - xp).toLocaleString() : 0} XP to unlock`}
+                </div>
+              )}
+            </div>
+            {/* Action buttons */}
+            <div style={{width:200}}>
+              {lvl.level >= previewFrame.level ? (
+                <Btn accent={accent} onClick={()=>{setProfile(p=>({...p,frame:previewFrame.frame}));setPreviewFrame(null)}}>
+                  {(profile.frame||"none")===previewFrame.frame?"Equipped":"Equip Frame"}
+                </Btn>
+              ) : (
+                <Btn disabled>🔒 Locked</Btn>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Achievements */}
+      <Glass style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><ML style={{marginBottom:0}}>Achievements</ML><span style={{fontSize:10,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{unlocked.length}/{ACHIEVEMENTS.length}</span></div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{unlocked.map(a=><div key={a.id} style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:`${accent}12`,border:`1px solid ${accent}30`,fontSize:16}}>{a.emoji}</div>)}{ACHIEVEMENTS.filter(a=>!a.check(stash)&&!a.secret).map(a=><div key={a.id} style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)",fontSize:14,opacity:0.25}}>{a.emoji}</div>)}</div></Glass>
+
+      {/* Export/Import */}
+      <Glass style={{marginBottom:14}}><ML>Data</ML><div style={{display:"flex",gap:8}}><Btn secondary style={{flex:1}} onClick={()=>{const d=JSON.stringify({stash,profile,heatProfiles,version:APP_VERSION});const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="puffco-backup.json";a.click();URL.revokeObjectURL(u)}}>Export</Btn><Btn secondary style={{flex:1}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.stash){await storageSet("puffco-stash",d.stash);setStash(d.stash)}if(d.profile){await storageSet("puffco-profile",d.profile);setProfile(d.profile)}if(d.heatProfiles){await storageSet("puffco-heat-profiles",d.heatProfiles);setHeatProfiles(d.heatProfiles)}}catch{alert("Invalid backup")}};i.click()}}>Import</Btn></div></Glass>
+
+      {/* ─── HELP ─── */}
+      <Glass style={{marginBottom:14}} onClick={()=>setHelpOpen(!helpOpen)}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
+          <ML style={{marginBottom:0}}>How to Use</ML>
+          <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{helpOpen?"▾":"▸"}</span>
+        </div>
+        {helpOpen && (
+          <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12}}>
+            {[
+              {step:"1",title:"Start a Session",desc:"Tap the flame button in the center of the nav bar. You'll enter the session flow where you log what you're dabbing."},
+              {step:"2",title:"Load Chamber",desc:"Enter your brand and strain name — previous entries auto-suggest to keep spelling consistent. Add a jar photo, pick your classification (Indica/Hybrid/Sativa), and select the extract type."},
+              {step:"3",title:"Select Heat",desc:"Choose from your custom heat profiles or drag the temp slider. The app suggests a starting temp based on your extract type."},
+              {step:"4",title:"Session Timer",desc:"Once your Peak is heated, tap Start Inhale Timer. Use +30s to extend, Pause to hold, or +18°F for a boost. End when you're done."},
+              {step:"5",title:"Rate & Review",desc:"Select how you feel (effects), then rate vapor quality, taste, potency, and overall. Add notes about flavor or experience."},
+              {step:"6",title:"Track Progress",desc:"Check the Stats tab for trends, streaks, and achievements. The Encyclopedia tab builds a personal database of every strain you've tried."},
+              {step:"7",title:"Maintain Your Peak",desc:"The Care tab tracks dabs since your last ISO soak. Log a cleaning when you do one to reset the counter."},
+            ].map(s => (
+              <div key={s.step} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:`${accent}20`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:accent}}>{s.step}</div>
+                <div><div style={{fontSize:12,fontWeight:500,marginBottom:3}}>{s.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{s.desc}</div></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Glass>
+
+      {/* ─── FAQ ─── */}
+      <Glass style={{marginBottom:14}} onClick={()=>setFaqOpen(!faqOpen)}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
+          <ML style={{marginBottom:0}}>FAQ</ML>
+          <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{faqOpen?"▾":"▸"}</span>
+        </div>
+        {faqOpen && (
+          <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:14}}>
+            {[
+              {q:"Does this connect to my Peak via Bluetooth?",a:"No. This is a manual logging companion app. You enter your session details yourself — the app doesn't communicate with your device."},
+              {q:"Which Puffco devices does this support?",a:"All of them — Peak, Peak Pro, Pivot, Proxy, and any future devices. Since it's manual logging, it works with any device."},
+              {q:"Where is my data stored?",a:"All data is stored locally on your device in persistent storage. Nothing is sent to any server. Your sessions, profile, and settings stay private."},
+              {q:"Can I transfer my data to a new device?",a:"Yes — use the Export button in your Profile to download a backup file, then use Import on your new device to restore it."},
+              {q:"What are XP and levels?",a:"You earn XP for logging sessions, rating 5 stars, adding effects, writing notes, uploading photos, and trying new strains. XP levels up your rank from Newbie to Dab God."},
+              {q:"How does the cleaning tracker work?",a:"It counts sessions since your last ISO soak. At 30 sessions it turns red to remind you. Tap 'Log ISO Soak' in the Care tab to reset."},
+              {q:"Can I edit a session after saving?",a:"Not yet — but you can delete it and re-log it. Session editing is on the roadmap."},
+              {q:"What's the Strain Encyclopedia?",a:"It automatically builds a personal database from your logged sessions. Each strain shows averaged ratings, effects, and all sessions. Access it from the link in the Stash tab header."},
+            ].map((item, i) => (
+              <div key={i}>
+                <div style={{fontSize:12,fontWeight:500,marginBottom:4,color:"rgba(255,255,255,0.8)"}}>{item.q}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{item.a}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Glass>
+
+      {/* ─── TICKET SUBMISSION ─── */}
+      <Glass style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",marginBottom:ticketOpen?14:0}} onClick={()=>setTicketOpen(!ticketOpen)}>
+          <ML style={{marginBottom:0}}>Submit Feedback</ML>
+          <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{ticketOpen?"▾":"▸"}</span>
+        </div>
+        {ticketOpen && (
+          <div>
+            {ticketSent ? (
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:28,marginBottom:8}}>✓</div>
+                <div style={{fontSize:12,fontWeight:500,color:accent}}>Submitted — thank you!</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginTop:4}}>Your feedback has been saved.</div>
+              </div>
+            ) : (
+              <>
+                <ML>Type</ML>
+                <div style={{display:"flex",gap:8,marginBottom:14}}>
+                  {[{id:"bug",label:"Bug Report",icon:"🐛"},{id:"idea",label:"Feature Idea",icon:"💡"},{id:"other",label:"Other",icon:"💬"}].map(t => (
+                    <button key={t.id} onClick={()=>setTicketType(t.id)} style={{
+                      flex:1, padding:"10px 8px", borderRadius:10, cursor:"pointer",
+                      background: ticketType===t.id ? `${accent}15` : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${ticketType===t.id ? accent+"40" : "rgba(255,255,255,0.06)"}`,
+                      color: ticketType===t.id ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.4)",
+                      display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+                      fontSize:9, letterSpacing:1, textTransform:"uppercase",
+                      fontFamily:"'JetBrains Mono',monospace", WebkitTapHighlightColor:"transparent",
+                    }}>
+                      <span style={{fontSize:16}}>{t.icon}</span>{t.label}
+                    </button>
+                  ))}
+                </div>
+                <ML>Description</ML>
+                <Input rows={4} value={ticketText} onChange={e=>setTicketText(e.target.value)} placeholder={ticketType==="bug"?"Describe the issue — what happened, what you expected...":ticketType==="idea"?"Describe your feature idea...":"What's on your mind?"} />
+                <div style={{marginTop:12}}>
+                  <Btn accent={accent} disabled={!ticketText.trim()} onClick={submitTicket}>Submit</Btn>
+                </div>
+              </>
+            )}
+
+            {/* Previous tickets */}
+            {tickets.length > 0 && (
+              <div style={{marginTop:18}}>
+                <ML>Your Submissions</ML>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {tickets.slice(0, 5).map(t => (
+                    <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+                        <span style={{fontSize:14}}>{t.type==="bug"?"🐛":t.type==="idea"?"💡":"💬"}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"rgba(255,255,255,0.6)"}}>{t.text}</div>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{t.date}</div>
+                        </div>
+                      </div>
+                      <span style={{fontSize:8,padding:"3px 8px",borderRadius:8,background:t.status==="open"?`${accent}15`:"rgba(74,222,128,0.15)",color:t.status==="open"?accent:"#4ade80",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",flexShrink:0}}>{t.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Glass>
+
+      <div style={{textAlign:"center",padding:"20px 0"}}><span style={{fontSize:9,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:2}}>v{APP_VERSION}</span></div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// FEATURE #11: STRAIN ENCYCLOPEDIA
+// ═══════════════════════════════════════════════════════
+function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,setTab}) {
+  const [encSearch, setEncSearch] = useState("");
+  const [encSort, setEncSort] = useState("count"); // count, rating, alpha
+  const allEntries = Object.entries(strainMap);
+  let entries = allEntries;
+  if (encSearch.trim()) {
+    const q = encSearch.toLowerCase();
+    entries = entries.filter(([,d]) => d.strain.toLowerCase().includes(q) || d.brand.toLowerCase().includes(q) || [...d.types].some(t => t.toLowerCase().includes(q)));
+  }
+  if (encSort === "count") entries = entries.sort((a,b) => b[1].sessions.length - a[1].sessions.length);
+  else if (encSort === "rating") entries = entries.sort((a,b) => {
+    const ar = b[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (b[1].sessions.filter(x=>x.rating>0).length||1);
+    const br = a[1].sessions.reduce((s,x) => s+(x.rating||0), 0) / (a[1].sessions.filter(x=>x.rating>0).length||1);
+    return ar - br;
+  });
+  else entries = entries.sort((a,b) => a[1].strain.localeCompare(b[1].strain));
+
+  return (
+    <div>
+      <div className="fu fu1" style={{padding:"22px 0 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div><h2 style={{fontSize:20,fontWeight:600}}>Strain Encyclopedia</h2><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>{allEntries.length} unique strain{allEntries.length!==1?"s":""}</p></div>
+        <button onClick={()=>switchTab("stash")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}}>← Back</button>
+      </div>
+      {/* Search */}
+      <div style={{position:"relative",marginBottom:10}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"rgba(255,255,255,0.2)"}}>⌕</span>
+        <Input value={encSearch} onChange={e=>setEncSearch(e.target.value)} placeholder="Search strain, brand, or type..." style={{paddingLeft:34}} />
+        {encSearch&&<button onClick={()=>setEncSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:14}}>✕</button>}
+      </div>
+      {/* Sort */}
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"count",label:"Most Dabbed"},{id:"rating",label:"Top Rated"},{id:"alpha",label:"A → Z"}].map(s=>(
+          <button key={s.id} onClick={()=>setEncSort(s.id)} style={{padding:"5px 12px",borderRadius:16,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,WebkitTapHighlightColor:"transparent",background:encSort===s.id?accent:"transparent",color:encSort===s.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${encSort===s.id?accent:accent+"30"}`}}>{s.label}</button>
+        ))}
+      </div>
+      {entries.length===0?<div style={{textAlign:"center",padding:"60px 0"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{encSearch?"No results":"Log sessions to build your encyclopedia"}</p></div>
+      :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {entries.map(([key,data])=>{
+          const avgR=data.sessions.filter(s=>s.rating>0).length?(data.sessions.reduce((a,s)=>a+(s.rating||0),0)/data.sessions.filter(s=>s.rating>0).length).toFixed(1):"—";
+          const bestTemp=data.sessions.filter(s=>s.finalTempF).sort((a,b)=>(b.rating||0)-(a.rating||0))[0];
+          const z=bestTemp?getZone(bestTemp.finalTempF):null;
+          const photo=data.sessions.find(s=>s.photo)?.photo;
+          return (
+            <Glass key={key} onClick={()=>setStrainView(key)} style={{padding:0,cursor:"pointer",overflow:"hidden"}}>
+              {photo&&<div style={{width:"100%",height:80,overflow:"hidden"}}><img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover",opacity:0.6}}/></div>}
+              <div style={{padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
+                    <div style={{fontSize:14,fontWeight:500,marginTop:2}}>{data.strain}</div>
+                    <div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{data.sessions.length} session{data.sessions.length!==1?"s":""} · {[...data.types].join(", ")}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <div style={{fontSize:16,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{avgR}{avgR!=="—"&&"★"}</div>
+                    {z&&<div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono',monospace"}}>{bestTemp.finalTempF}°</span></div>}
+                  </div>
+                </div>
+              </div>
+            </Glass>
+          );
+        })}
+      </div>}
+    </div>
+  );
+}
+
+// Strain Detail Modal
+function StrainDetailModal({strainKey,strainMap,accent,onClose,onSelect}) {
+  const data = strainMap[strainKey];
+  if (!data) return null;
+  const sessions = data.sessions;
+  const avgR=sessions.filter(s=>s.rating>0).length?(sessions.reduce((a,s)=>a+(s.rating||0),0)/sessions.filter(s=>s.rating>0).length).toFixed(1):"—";
+  const avgV=sessions.filter(s=>s.vapor>0).length?(sessions.reduce((a,s)=>a+(s.vapor||0),0)/sessions.filter(s=>s.vapor>0).length).toFixed(1):"—";
+  const avgT=sessions.filter(s=>s.taste>0).length?(sessions.reduce((a,s)=>a+(s.taste||0),0)/sessions.filter(s=>s.taste>0).length).toFixed(1):"—";
+  const avgP=sessions.filter(s=>s.potency>0).length?(sessions.reduce((a,s)=>a+(s.potency||0),0)/sessions.filter(s=>s.potency>0).length).toFixed(1):"—";
+  const effects=sessions.flatMap(s=>s.effects||[]);
+  const effectCounts={};effects.forEach(e=>{effectCounts[e]=(effectCounts[e]||0)+1});
+  const topEffects=Object.entries(effectCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const photo=sessions.find(s=>s.photo)?.photo;
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.96)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
+        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+        {photo&&<div style={{width:"100%",height:160,borderRadius:18,overflow:"hidden",marginBottom:16}}><img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+        <Glass style={{marginBottom:14}}>
+          <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{data.brand}</div>
+          <div style={{fontSize:22,fontWeight:500,marginTop:4}}>{data.strain}</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:4}}>{sessions.length} session{sessions.length!==1?"s":""} · {[...data.types].join(", ")} · {[...data.classifications].join("/")}</div>
+        </Glass>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          {[{l:"Rating",v:avgR},{l:"Vapor",v:avgV},{l:"Taste",v:avgT},{l:"Potency",v:avgP}].map((s,i)=><Glass key={i} style={{padding:12,textAlign:"center"}}><div style={{fontSize:18,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{s.l}</div></Glass>)}
+        </div>
+        {topEffects.length>0&&<Glass style={{marginBottom:14}}><ML>Common Effects</ML><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{topEffects.map(([eid,count])=>{const e=EFFECTS_LIST.find(x=>x.id===eid);return e?<span key={eid} style={{fontSize:9,padding:"4px 10px",borderRadius:12,background:`${accent}12`,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{e.emoji} {e.label} ×{count}</span>:null})}</div></Glass>}
+        <ML>All Sessions</ML>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {sessions.map(s=>{const z=getZone(s.finalTempF||500);return(
+            <Glass key={s.id} onClick={()=>{onClose();setTimeout(()=>onSelect(s),100)}} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontSize:12,fontWeight:500}}>{s.date}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{z.name} · {s.finalTempF}°F</div></div>
+              <div style={{display:"flex",gap:1}}>{[1,2,3,4,5].map(i=><Leaf key={i} size={9} filled={i<=s.rating} accent={accent}/>)}</div>
+            </Glass>
+          )})}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// SESSION DETAIL MODAL (includes #6 repeat, #23 share)
+// ═══════════════════════════════════════════════════════
+function DetailModal({item,accent,onClose,onDelete,onRepeat,onShare,onEdit}) {
+  const z=getZone(item.finalTempF||500);
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.96)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
+        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent"}}>✕</button>
+        {item.photo&&<div style={{width:"100%",height:180,borderRadius:18,overflow:"hidden",marginBottom:14}}><img src={item.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+        <Glass style={{marginBottom:14}}><div style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{item.brand}</div><div style={{fontSize:22,fontWeight:500,marginTop:4}}>{item.strain}</div><div style={{display:"flex",gap:8,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{item.classification}</span><span style={{color:"rgba(255,255,255,0.15)"}}>·</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{item.type}</span></div></Glass>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <Glass><ML>Temperature</ML><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:10,height:10,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:13,fontWeight:600}}>{z.name}</span></div>{item.finalTempF&&<div style={{fontSize:20,fontWeight:200,fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{item.finalTempF}°F</div>}</Glass>
+          <Glass><ML>Duration</ML><div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)"}}>{item.duration>0?`${Math.floor(item.duration/60)}m ${item.duration%60}s`:"—"}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:6}}>{item.date} · {item.timeOfDay}</div></Glass>
+        </div>
+        <Glass style={{marginBottom:14}}><ML>Ratings</ML>{[{k:"vapor",l:"Vapor"},{k:"taste",l:"Taste"},{k:"potency",l:"Potency"},{k:"rating",l:"Overall"}].map(m=><div key={m.k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace",width:60}}>{m.l}</span><div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(s=><Leaf key={s} size={12} filled={s<=(item[m.k]||0)} accent={accent}/>)}</div></div>)}</Glass>
+        {item.notes&&<Glass style={{marginBottom:14}}><ML>Notes</ML><p style={{fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.6,fontStyle:"italic"}}>"{item.notes}"</p></Glass>}
+        {item.effects?.length>0&&<Glass style={{marginBottom:14}}><ML>Effects</ML><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{item.effects.map(eid=>{const e=EFFECTS_LIST.find(x=>x.id===eid);return e?<span key={eid} style={{fontSize:10,padding:"5px 10px",borderRadius:16,background:`${accent}15`,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{e.emoji} {e.label}</span>:null})}</div></Glass>}
+        {item.flavors?.length>0&&<Glass style={{marginBottom:14}}><ML>Flavor Notes</ML><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{item.flavors.map(f=><span key={f} style={{fontSize:10,padding:"5px 10px",borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",fontFamily:"'JetBrains Mono',monospace"}}>{f}</span>)}</div></Glass>}
+        {/* Spotify Player */}
+        {item.spotifyUrl&&(()=>{const m=item.spotifyUrl.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);if(!m)return null;return<Glass style={{marginBottom:14,padding:0,overflow:"hidden"}}><iframe src={`https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0`} width="100%" height="152" frameBorder="0" allow="encrypted-media" style={{borderRadius:18,display:"block"}}/></Glass>})()}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <Btn accent={accent} onClick={()=>onRepeat(item)}>🔄 Repeat This Sesh</Btn>
+          <Btn secondary onClick={()=>onEdit(item)}>✎ Edit Session</Btn>
+          <Btn secondary onClick={()=>onShare(item)}>📤 Share Card</Btn>
+          <Btn secondary onClick={()=>{if(confirm("Delete this session?"))onDelete(item.id)}} style={{color:"#ef4444"}}>Delete</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// FEATURE #23: SHAREABLE SESSION CARD
+// ═══════════════════════════════════════════════════════
+function ShareCard({item,accent,onClose}) {
+  const cardRef = useRef(null);
+  const z = getZone(item.finalTempF||500);
+  const download = async () => {
+    try {
+      if (!window.html2canvas) {
+        await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+      }
+      const canvas = await window.html2canvas(cardRef.current,{backgroundColor:"#04040c",scale:2,useCORS:true});
+      const blob = await new Promise(r=>canvas.toBlob(r,"image/png"));
+      if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],"session.png",{type:"image/png"})]})){
+        await navigator.share({files:[new File([blob],"puffco-session.png",{type:"image/png"})],title:`${item.strain} — ${item.rating}⭐`});
+      } else {
+        const link=document.createElement("a");link.download=`puffco-${item.strain.replace(/\s+/g,"-").toLowerCase()}-${item.date}.png`;link.href=canvas.toDataURL("image/png");link.click();
+      }
+    } catch { alert("Screenshot the card to share!"); }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:80,background:"rgba(4,4,12,0.96)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{width:"100%",maxWidth:360}}>
+        <div ref={cardRef} style={{borderRadius:20,overflow:"hidden",background:"#0a0a0a",border:`2px solid ${accent}30`}}>
+          {item.photo&&<div style={{width:"100%",height:160,overflow:"hidden"}}><img src={item.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+          <div style={{padding:"20px 24px"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{item.brand}</div>
+            <div style={{fontSize:20,fontWeight:600,marginTop:4}}>{item.strain}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+              <span style={{fontSize:10,padding:"3px 10px",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{item.type}</span>
+              <span style={{fontSize:10,padding:"3px 10px",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{item.classification}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12}}>
+              <div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(i=><Leaf key={i} size={14} filled={i<=item.rating} accent={accent}/>)}</div>
+              <span style={{fontSize:13,fontWeight:600}}>{item.rating}/5</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{z.name} · {item.finalTempF}°F</span>
+            </div>
+            {item.effects?.length>0&&<div style={{display:"flex",gap:4,marginTop:10,flexWrap:"wrap"}}>{item.effects.slice(0,4).map(eid=>{const e=EFFECTS_LIST.find(x=>x.id===eid);return e?<span key={eid} style={{fontSize:8,padding:"3px 8px",borderRadius:8,background:`${accent}15`,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>{e.emoji} {e.label}</span>:null})}</div>}
+            {item.notes&&<p style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontStyle:"italic",marginTop:10,lineHeight:1.5}}>"{item.notes.slice(0,120)}{item.notes.length>120?"...":""}"</p>}
+          </div>
+          <div style={{padding:"12px 24px",borderTop:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>{item.date}</span>
+            <span style={{fontSize:9,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>puffco-companion.web.app</span>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:16}}>
+          <Btn accent={accent} onClick={download} style={{flex:1}}>{navigator.share?"📤 Share":"💾 Save"}</Btn>
+          <Btn secondary onClick={onClose} style={{flex:"0 0 80px"}}>Close</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(PuffcoCompanion));
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(() => {}); }
+  </script>
+</body>
+</html>
