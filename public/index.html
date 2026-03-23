@@ -10,6 +10,10 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="/manifest.json" />
   <title>Puffco Companion</title>
+  <!-- Vercel Analytics -->
+  <script defer src="/_vercel/insights/script.js"></script>
+  <!-- Vercel Web Analytics -->
+  <script defer src="/_vercel/speed-insights/script.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -134,6 +138,30 @@ const LEVELS = [
   {level:10,title:"Connoisseur",xp:5500,emoji:"💎",frame:"diamond"},
   {level:11,title:"Extract Elder",xp:7500,emoji:"🏛️",frame:"ornate"},
   {level:12,title:"Dab God",xp:10000,emoji:"⚡",frame:"legendary"},
+];
+
+const COLORWAYS = [
+  // Solids
+  {name:"Hash",hex:"#6C5CE7",section:"solid"},
+  {name:"Live Rosin",hex:"#00B894",section:"solid"},
+  {name:"Rosin",hex:"#FDCB6E",section:"solid"},
+  {name:"Shatter",hex:"#E17055",section:"solid"},
+  {name:"Diamonds",hex:"#0984e3",section:"solid"},
+  {name:"Terps",hex:"#e84393",section:"solid"},
+  {name:"Ice Hash",hex:"#ffffff",section:"solid"},
+  {name:"Bubble",hex:"#a29bfe",section:"solid"},
+  // Ombré
+  {name:"Purple Haze",hex:"#6C5CE7",hex2:"#a29bfe",section:"ombre"},
+  {name:"Ocean Breath",hex:"#0984e3",hex2:"#00cec9",section:"ombre"},
+  {name:"Sunset Dab",hex:"#E17055",hex2:"#FDCB6E",section:"ombre"},
+  {name:"Pink Lemonade",hex:"#e84393",hex2:"#fd79a8",section:"ombre"},
+  {name:"Golden Leaf",hex:"#FDCB6E",hex2:"#e17055",section:"ombre"},
+  {name:"Blueberry Kush",hex:"#6C5CE7",hex2:"#0984e3",section:"ombre"},
+  // Special
+  {name:"Fire OG",hex:"#ff6348",hex2:"#ff9f43",section:"special"},
+  {name:"Moonrock",hex:"#dfe6e9",hex2:"#b2bec3",section:"special"},
+  {name:"Green Crack",hex:"#00b894",hex2:"#55efc4",section:"special"},
+  {name:"Cherry Pie",hex:"#e84393",hex2:"#6c5ce7",section:"special"},
 ];
 
 // ─── PFP Frame SVG Component ──────────────────────────
@@ -2075,6 +2103,13 @@ function CareTab({profile,accent,onClean,setProfile}) {
   const pct=Math.min(((profile.dabsSinceClean||0)/threshold)*100,100);
   let sc="#4ade80";if(pct>60)sc="#facc15";if(pct>=100)sc="#ef4444";
   const circ=283,off=circ-(circ*pct)/100;
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(false);
+  const [ticketType, setTicketType] = useState("bug");
+  const [ticketText, setTicketText] = useState("");
+  const [ticketSent, setTicketSent] = useState(false);
+  const [tickets, setTickets] = useState([]);
+  useEffect(() => { (async () => { try { const t = await storageGet("puffco-tickets", []); setTickets(t); } catch {} })(); }, []);
   return (
     <div>
       <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Peak Care</h2></div>
@@ -2136,398 +2171,6 @@ function CareTab({profile,accent,onClean,setProfile}) {
       </Glass>
 
       {(profile.cleanHistory||[]).length>0&&<div><ML>Clean History</ML>{(profile.cleanHistory||[]).slice(0,5).map((e,i)=><Glass key={i} style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:"#4ade80",fontSize:14}}>✓</span><span style={{fontSize:12,fontWeight:500}}>ISO Soak</span></div><div style={{textAlign:"right"}}><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{e.date}</div></div></Glass>)}</div>}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════
-// PROFILE TAB (#9 stats summary, #18 custom profiles)
-// ═══════════════════════════════════════════════════════
-function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile,accessories,setAccessories,customRatingDims,setCustomRatingDims}) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [previewFrame, setPreviewFrame] = useState(null);
-  const accent2 = profile.accent2 || null;
-  const accentGrad = accent2 ? `linear-gradient(135deg, ${accent}, ${accent2})` : accent;
-  const [faqOpen, setFaqOpen] = useState(false);
-  const [ticketOpen, setTicketOpen] = useState(false);
-  const [ticketType, setTicketType] = useState("bug");
-  const [ticketText, setTicketText] = useState("");
-  const [ticketSent, setTicketSent] = useState(false);
-  const [tickets, setTickets] = useState([]);
-
-  // Load tickets from storage on mount
-  useEffect(() => { (async () => { try { const t = await storageGet("puffco-tickets", []); setTickets(t); } catch {} })(); }, []);
-  const submitTicket = async () => {
-    if (!ticketText.trim()) return;
-    const ticket = { id: Date.now(), type: ticketType, text: ticketText.trim(), date: new Date().toISOString().split("T")[0], status: "open" };
-    const updated = [ticket, ...tickets];
-    setTickets(updated);
-    await storageSet("puffco-tickets", updated);
-    setTicketText("");
-    setTicketSent(true);
-    setTimeout(() => setTicketSent(false), 3000);
-  };
-  const avatarRef = useRef(null);
-  const handleAvatarUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await compressPhoto(file, 256);
-    setProfile(p => ({ ...p, avatar: dataUrl }));
-  };
-
-  return (
-    <div>
-      <div className="fu fu1" style={{padding:"22px 0 18px"}}><h2 style={{fontSize:20,fontWeight:600}}>Profile</h2></div>
-
-      {/* Avatar + Name — with photo upload */}
-      <input ref={avatarRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAvatarUpload} />
-      <Glass className="fu fu2" style={{textAlign:"center",marginBottom:14}}>
-        <div style={{position:"relative",width:72,height:72,margin:"0 auto 12px"}}>
-          {/* PFP Frame */}
-          <PfpFrame frameId={profile.frame || "none"} size={72} accent={accent} accentGrad={accentGrad} />
-          <div onClick={() => avatarRef.current?.click()}
-            style={{width:72,height:72,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:600,cursor:"pointer",overflow:"hidden"}}>
-            {profile.avatar ? (
-              <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
-            ) : (
-              <span>{profile.name ? profile.name[0].toUpperCase() : "?"}</span>
-            )}
-          </div>
-          {/* Camera badge */}
-          <button onClick={() => avatarRef.current?.click()}
-            style={{position:"absolute",bottom:-2,right:-2,width:24,height:24,borderRadius:"50%",background:accentGrad,border:"2px solid #04040c",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"transform 0.2s"}}
-            onMouseDown={e => e.currentTarget.style.transform="scale(0.9)"}
-            onMouseUp={e => e.currentTarget.style.transform="scale(1)"}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          </button>
-          {/* Remove avatar option */}
-          {profile.avatar && (
-            <button onClick={(e) => {e.stopPropagation(); setProfile(p => ({...p, avatar:""}))}}
-              style={{position:"absolute",top:-2,right:-2,width:20,height:20,borderRadius:"50%",background:"rgba(239,68,68,0.9)",border:"2px solid #04040c",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:10,color:"white",lineHeight:1}}>✕</button>
-          )}
-        </div>
-        <div style={{fontSize:18,fontWeight:500,marginBottom:4}}>{profile.name||"Set Your Name"}</div>
-        <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase"}}>{profile.device} · {stash.length} sessions</div>
-        {profile.location&&<div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>📍 {profile.location} · {profile.market==="black"?"BM":"Rec"}</div>}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}><span style={{fontSize:14}}>{lvl.emoji}</span><span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:accent,letterSpacing:1.5}}>Lv.{lvl.level} {lvl.title}</span></div>
-        {profile.bio&&<div style={{fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic",marginTop:8,lineHeight:1.5,maxWidth:280,margin:"8px auto 0"}}>"{profile.bio}"</div>}
-        <p style={{fontSize:9,color:"rgba(255,255,255,0.15)",marginTop:8,fontFamily:"'JetBrains Mono',monospace"}}>Tap photo to change</p>
-      </Glass>
-
-      {/* Bio, Name & Location */}
-      <Glass style={{marginBottom:14}}>
-        <ML>About You</ML>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
-            <ML>Name</ML>
-            <Input value={profile.name||""} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name" />
-          </div>
-          <div>
-            <ML>Device</ML>
-            <select value={profile.device||"Peak"} onChange={e=>setProfile(p=>({...p,device:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
-              {["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><option key={d} value={d} style={{background:"#111"}}>{d}</option>)}
-            </select>
-          </div>
-        </div>
-        <div style={{marginBottom:12}}>
-          <ML>Bio</ML>
-          <Input rows={2} value={profile.bio||""} onChange={e=>setProfile(p=>({...p,bio:e.target.value.slice(0,200)}))} placeholder="Tell the community about yourself..." style={{fontSize:12}} />
-          <div style={{textAlign:"right",fontSize:7,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{(profile.bio||"").length}/200</div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div>
-            <ML>Location</ML>
-            <Input value={profile.location||""} onChange={e=>setProfile(p=>({...p,location:e.target.value}))} placeholder="e.g. Portland, OR" />
-          </div>
-          <div>
-            <ML>Market</ML>
-            <div style={{display:"flex",gap:6}}>
-              {[{id:"rec",label:"Rec"},{id:"med",label:"Med"},{id:"black",label:"BM"}].map(m=>(
-                <button key={m.id} onClick={()=>setProfile(p=>({...p,market:m.id}))} style={{
-                  flex:1,padding:"10px 0",borderRadius:10,fontSize:9,letterSpacing:1,textTransform:"uppercase",fontWeight:600,cursor:"pointer",
-                  fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",
-                  background:(profile.market||"rec")===m.id?`${accent}15`:"rgba(255,255,255,0.03)",
-                  border:`1px solid ${(profile.market||"rec")===m.id?accent+"40":"rgba(255,255,255,0.06)"}`,
-                  color:(profile.market||"rec")===m.id?accent:"rgba(255,255,255,0.35)",
-                }}>{m.label}</button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Glass>
-
-      {/* Feature #9: Profile Stats Summary */}
-      {profileStats&&(
-        <Glass className="fu fu3" style={{marginBottom:14}}>
-          <ML>At a Glance</ML>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-            {[{l:"Avg",v:profileStats.avgRating!=="—"?profileStats.avgRating+"★":"—"},{l:"Brands",v:profileStats.brands},{l:"Strains",v:profileStats.strains}].map((s,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:18,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{s.l}</div></div>)}
-          </div>
-          <div style={{display:"flex",gap:10}}>
-            {profileStats.favZone&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Fav Temp</div><div style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:HEAT_ZONES.find(z=>z.name===profileStats.favZone)?.hex}}/><span style={{fontSize:12,fontWeight:600}}>{profileStats.favZone}</span></div></div>}
-            {profileStats.topStrain&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Top Strain</div><div style={{fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profileStats.topStrain}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2}}>{profileStats.topStrainCount}×</div></div>}
-          </div>
-        </Glass>
-      )}
-
-      {/* Settings */}
-      <Glass style={{marginBottom:14}}><ML>Display Name</ML><Input value={profile.name||""} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name..."/></Glass>
-      <Glass style={{marginBottom:14}}><ML>Device</ML><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><button key={d} onClick={()=>setProfile(p=>({...p,device:d}))} style={{padding:10,borderRadius:10,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:profile.device===d?accent:"rgba(255,255,255,0.03)",color:profile.device===d?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${profile.device===d?accent:"rgba(255,255,255,0.06)"}`}}>{d}</button>)}</div></Glass>
-
-      {/* Feature #18: Custom Heat Profiles */}
-      <Glass style={{marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <ML style={{marginBottom:0}}>Heat Profiles</ML>
-          <button onClick={()=>setEditingProfile({id:Date.now(),name:"",tempF:510,time:60,color:accent,isNew:true})} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>+ New</button>
-        </div>
-        {heatProfiles.map(p=>{const isActive=p.id===activeProfileId;return(
-          <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,marginBottom:6,cursor:"pointer",background:isActive?`${p.color}0a`:"transparent",border:`1px solid ${isActive?p.color+"40":"rgba(255,255,255,0.04)"}`}} onClick={()=>setActiveProfileId(p.id)}>
-            <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,background:`radial-gradient(circle at 30% 30%,${p.color}40,${p.color}10)`,border:`1.5px solid ${p.color}55`,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:p.color}}/></div>
-            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:isActive?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)"}}>{p.name}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>{p.tempF}°F · {p.time}s</div></div>
-            <button onClick={e=>{e.stopPropagation();setEditingProfile({...p})}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.2)",cursor:"pointer",fontSize:12}}>✎</button>
-            {isActive&&<div style={{fontSize:7,color:p.color,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>active</div>}
-          </div>
-        )})}
-      </Glass>
-
-      {/* Heat Profile Editor Modal */}
-      {editingProfile&&(
-        <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(4,4,12,0.95)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:18}} onPointerDown={e=>{if(e.target===e.currentTarget)setEditingProfile(null)}}>
-          <div style={{width:"100%",maxWidth:440,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:24}}>
-            <ML>{editingProfile.isNew?"New Profile":"Edit Profile"}</ML>
-            <div style={{marginBottom:14}}><ML>Name</ML><Input value={editingProfile.name} onChange={e=>setEditingProfile(p=>({...p,name:e.target.value}))} placeholder="Profile name..."/></div>
-            <div style={{display:"flex",gap:12,marginBottom:14}}>
-              <div style={{flex:1}}><ML>Temp °F</ML><input type="number" min={400} max={620} value={editingProfile.tempF} onChange={e=>setEditingProfile(p=>({...p,tempF:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
-              <div style={{flex:1}}><ML>Time (s)</ML><input type="number" min={10} max={300} value={editingProfile.time} onChange={e=>setEditingProfile(p=>({...p,time:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
-            </div>
-            <ML>Color</ML>
-            <div style={{display:"flex",gap:8,marginBottom:20}}>
-              {["#3b82f6","#22c55e","#ef4444","#ffffff","#FDCB6E","#E17055","#a855f7","#06b6d4","#e84393"].map(c=><button key={c} onClick={()=>setEditingProfile(p=>({...p,color:c}))} style={{width:28,height:28,borderRadius:"50%",background:c,border:`2px solid ${editingProfile.color===c?"white":"rgba(255,255,255,0.1)"}`,cursor:"pointer",transform:editingProfile.color===c?"scale(1.15)":"scale(1)"}}/>)}
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              {!editingProfile.isNew&&<Btn secondary onClick={()=>{setHeatProfiles(p=>p.filter(x=>x.id!==editingProfile.id));if(activeProfileId===editingProfile.id&&heatProfiles.length>1)setActiveProfileId(heatProfiles.find(x=>x.id!==editingProfile.id).id);setEditingProfile(null)}} style={{flex:1,color:"#ef4444"}}>Delete</Btn>}
-              <Btn accent={accent} disabled={!editingProfile.name.trim()} onClick={()=>{if(!editingProfile.name.trim())return;if(editingProfile.isNew){const{isNew,...rest}=editingProfile;setHeatProfiles(p=>[...p,rest])}else{setHeatProfiles(p=>p.map(x=>x.id===editingProfile.id?editingProfile:x))}setEditingProfile(null)}} style={{flex:1}}>💾 Save</Btn>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Accent Color */}
-      <Glass style={{marginBottom:14}}>
-        <ML>Theme</ML>
-        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Solids</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {[
-            {hex:"#6C5CE7",name:"Hash"},
-            {hex:"#00B894",name:"Live Rosin"},
-            {hex:"#FDCB6E",name:"Rosin"},
-            {hex:"#E17055",name:"Shatter"},
-            {hex:"#0984e3",name:"Diamonds"},
-            {hex:"#e84393",name:"Terps"},
-            {hex:"#ffffff",name:"Ice Hash"},
-            {hex:"#a29bfe",name:"Bubble"},
-          ].map(t => {
-            const sel = profile.accent === t.hex;
-            return (
-              <button key={t.hex} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:null}))}
-                style={{
-                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
-                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
-                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
-                }}>
-                <div style={{width:20,height:20,borderRadius:"50%",background:t.hex,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Ombré</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {[
-            {hex:"#6C5CE7",hex2:"#e84393",name:"Purple Haze"},
-            {hex:"#0984e3",hex2:"#00B894",name:"Ocean Breath"},
-            {hex:"#E17055",hex2:"#FDCB6E",name:"Sunset Dab"},
-            {hex:"#e84393",hex2:"#FDCB6E",name:"Pink Lemonade"},
-            {hex:"#00B894",hex2:"#FDCB6E",name:"Golden Leaf"},
-            {hex:"#6C5CE7",hex2:"#0984e3",name:"Blueberry Kush"},
-          ].map(t => {
-            const sel = profile.accent === t.hex && profile.accent2 === t.hex2;
-            return (
-              <button key={t.name} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:t.hex2}))}
-                style={{
-                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
-                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
-                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
-                }}>
-                <div style={{width:20,height:20,borderRadius:"50%",background:`linear-gradient(135deg, ${t.hex}, ${t.hex2})`,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Special</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[
-            {hex:"#ff6b6b",hex2:"#ffa502",name:"Fire OG"},
-            {hex:"#a29bfe",hex2:"#ffffff",name:"Moonrock"},
-            {hex:"#2ed573",hex2:"#7bed9f",name:"Green Crack"},
-            {hex:"#ff4757",hex2:"#ff6348",name:"Cherry Pie"},
-          ].map(t => {
-            const sel = profile.accent === t.hex && profile.accent2 === t.hex2;
-            return (
-              <button key={t.name} onClick={()=>setProfile(p=>({...p,accent:t.hex,accent2:t.hex2}))}
-                style={{
-                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
-                  borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
-                  background: sel ? `${t.hex}15` : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${sel ? t.hex+"50" : "rgba(255,255,255,0.05)"}`,
-                }}>
-                <div style={{width:20,height:20,borderRadius:"50%",background:`linear-gradient(135deg, ${t.hex}, ${t.hex2})`,flexShrink:0,boxShadow:sel?`0 0 10px ${t.hex}40`:"none"}} />
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:sel?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)"}}>{t.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </Glass>
-
-      {/* PFP Frame Selector */}
-      <Glass style={{marginBottom:14}}>
-        <ML>Profile Frame</ML>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {LEVELS.map(l => {
-            const isUnlocked = lvl.level >= l.level;
-            const selected = (profile.frame || "none") === l.frame;
-            return (
-              <button key={l.level} onClick={() => setPreviewFrame(l)}
-                style={{
-                  display:"flex", flexDirection:"column", alignItems:"center", gap:6,
-                  padding:"12px 6px", borderRadius:12, cursor:"pointer",
-                  background: selected ? `${accent}15` : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${selected ? accent+"50" : "rgba(255,255,255,0.06)"}`,
-                  WebkitTapHighlightColor: "transparent",
-                }}>
-                <div style={{position:"relative",width:36,height:36,opacity:isUnlocked?1:0.4}}>
-                  <PfpFrame frameId={l.frame} size={36} accent={accent} accentGrad={accentGrad} />
-                  <div style={{width:36,height:36,borderRadius:"50%",background:`${accent}15`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>
-                    {l.emoji}
-                  </div>
-                </div>
-                <span style={{fontSize:7,letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",color:isUnlocked?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.25)",textAlign:"center",lineHeight:1.3}}>
-                  {l.frame === "none" ? "None" : `Lv.${l.level}`}
-                </span>
-                {selected && <div style={{width:4,height:4,borderRadius:"50%",background:accent}} />}
-              </button>
-            );
-          })}
-        </div>
-      </Glass>
-
-      {/* Frame Preview Modal */}
-      {previewFrame && (
-        <div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.97)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}} onPointerDown={e=>{if(e.target===e.currentTarget)setPreviewFrame(null)}}>
-          <button onClick={()=>setPreviewFrame(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
-            {/* Large preview with avatar */}
-            <div style={{position:"relative",width:120,height:120}}>
-              <PfpFrame frameId={previewFrame.frame} size={120} accent={accent} accentGrad={accentGrad} />
-              <div style={{width:120,height:120,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:40,fontWeight:600,overflow:"hidden"}}>
-                {profile.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span>{profile.name?profile.name[0].toUpperCase():"?"}</span>}
-              </div>
-            </div>
-            {/* Frame info */}
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:28,marginBottom:8}}>{previewFrame.emoji}</div>
-              <div style={{fontSize:16,fontWeight:600}}>{previewFrame.frame==="none"?"No Frame":previewFrame.title}</div>
-              <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:2,textTransform:"uppercase",marginTop:4}}>Level {previewFrame.level} · {previewFrame.xp.toLocaleString()} XP</div>
-              {previewFrame.frame !== "none" && (
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:8}}>
-                  {lvl.level >= previewFrame.level ? "Unlocked" : `${previewFrame.xp - xp > 0 ? (previewFrame.xp - xp).toLocaleString() : 0} XP to unlock`}
-                </div>
-              )}
-            </div>
-            {/* Action buttons */}
-            <div style={{width:200}}>
-              {lvl.level >= previewFrame.level ? (
-                <Btn accent={accent} onClick={()=>{setProfile(p=>({...p,frame:previewFrame.frame}));setPreviewFrame(null)}}>
-                  {(profile.frame||"none")===previewFrame.frame?"Equipped":"Equip Frame"}
-                </Btn>
-              ) : (
-                <Btn disabled>🔒 Locked</Btn>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Achievements */}
-      <Glass style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><ML style={{marginBottom:0}}>Achievements</ML><span style={{fontSize:10,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{unlocked.length}/{ACHIEVEMENTS.length}</span></div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{ACHIEVEMENTS.map(a=><AchievementBadge key={a.id} achievement={a} earned={a.check(stash)} accent={accent} size="small" />)}</div></Glass>
-
-      {/* Accessory Inventory */}
-      <Glass style={{marginBottom:14}}>
-        <ML>Accessories</ML>
-        {accessories.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
-          {accessories.map((a,i)=>(
-            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
-              {a.photo&&<div style={{width:36,height:36,borderRadius:8,overflow:"hidden",flexShrink:0}}><img src={a.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:12,fontWeight:500}}>{a.name}</div>
-                <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{a.type}{a.brand?" · "+a.brand:""}</div>
-              </div>
-              <button onClick={()=>{const updated=accessories.filter((_,j)=>j!==i);setAccessories(updated);storageSet("puffco-accessories",updated)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",cursor:"pointer",fontSize:12}}>✕</button>
-            </div>
-          ))}
-        </div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          <Input value={profile._accName||""} onChange={e=>setProfile(p=>({...p,_accName:e.target.value}))} placeholder="Name" />
-          <select value={profile._accType||"Glass"} onChange={e=>setProfile(p=>({...p,_accType:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
-            {["Glass","Cap","Tether","Chamber","Atomizer","Ball Cap","Oculus","Travel Pack","Other"].map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}
-          </select>
-        </div>
-        <Input value={profile._accBrand||""} onChange={e=>setProfile(p=>({...p,_accBrand:e.target.value}))} placeholder="Brand (optional)" style={{marginBottom:8}} />
-        <Btn secondary small onClick={()=>{
-          if(!(profile._accName||"").trim())return;
-          const acc={id:Date.now(),name:profile._accName.trim(),type:profile._accType||"Glass",brand:profile._accBrand||""};
-          const updated=[...accessories,acc];setAccessories(updated);storageSet("puffco-accessories",updated);
-          setProfile(p=>({...p,_accName:"",_accBrand:""}));haptic.success();
-        }}>+ Add Accessory</Btn>
-      </Glass>
-
-      {/* Custom Rating Dimensions */}
-      <Glass style={{marginBottom:14}}>
-        <ML>Custom Rating Dimensions</ML>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginBottom:10,lineHeight:1.4}}>Toggle extra rating categories that appear during session rating.</p>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {customRatingDims.map(d=>(
-            <button key={d.id} onClick={()=>{
-              const updated=customRatingDims.map(x=>x.id===d.id?{...x,enabled:!x.enabled}:x);
-              setCustomRatingDims(updated);storageSet("puffco-custom-ratings",updated);haptic.tap();
-            }} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",
-              background:d.enabled?`${accent}10`:"rgba(255,255,255,0.02)",border:`1px solid ${d.enabled?accent+"30":"rgba(255,255,255,0.06)"}`}}>
-              <span style={{fontSize:12,color:d.enabled?"white":"rgba(255,255,255,0.35)"}}>{d.label}</span>
-              <div style={{width:36,height:20,borderRadius:10,background:d.enabled?accent:"rgba(255,255,255,0.1)",transition:"background 0.2s",position:"relative"}}>
-                <div style={{width:16,height:16,borderRadius:"50%",background:"white",position:"absolute",top:2,left:d.enabled?18:2,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
-              </div>
-            </button>
-          ))}
-        </div>
-      </Glass>
-
-      {/* Storage Warning */}
-      {typeof localStorage!=="undefined"&&getStorageUsage()>STORAGE_WARN_BYTES&&(
-        <Glass style={{marginBottom:14,border:"1px solid rgba(250,204,21,0.2)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:20}}>⚠️</span>
-            <div>
-              <div style={{fontSize:11,fontWeight:600,color:"#facc15"}}>Storage Almost Full</div>
-              <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",lineHeight:1.4,marginTop:2}}>You're using {(getStorageUsage()/1000000).toFixed(1)}MB of local storage. Export a backup and consider removing old session photos to free space.</div>
-            </div>
-          </div>
-        </Glass>
-      )}
-
-      {/* Export/Import */}
-      <Glass style={{marginBottom:14}}><ML>Data</ML><div style={{display:"flex",gap:8}}><Btn secondary style={{flex:1}} onClick={()=>{const d=JSON.stringify({stash,profile,heatProfiles,version:APP_VERSION});const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="puffco-backup.json";a.click();URL.revokeObjectURL(u)}}>Export</Btn><Btn secondary style={{flex:1}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.stash){await storageSet("puffco-stash",d.stash);setStash(d.stash)}if(d.profile){await storageSet("puffco-profile",d.profile);setProfile(d.profile)}if(d.heatProfiles){await storageSet("puffco-heat-profiles",d.heatProfiles);setHeatProfiles(d.heatProfiles)}}catch{alert("Invalid backup")}};i.click()}}>Import</Btn></div></Glass>
 
       {/* ─── HELP ─── */}
       <Glass style={{marginBottom:14}} onClick={()=>setHelpOpen(!helpOpen)}>
@@ -2535,24 +2178,17 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
           <ML style={{marginBottom:0}}>How to Use</ML>
           <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{helpOpen?"▾":"▸"}</span>
         </div>
-        {helpOpen && (
-          <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12}}>
-            {[
-              {step:"1",title:"Start a Session",desc:"Tap the flame button in the center of the nav bar. You'll enter the session flow where you log what you're dabbing."},
-              {step:"2",title:"Load Chamber",desc:"Enter your brand and strain name — previous entries auto-suggest to keep spelling consistent. Add a jar photo, pick your classification (Indica/Hybrid/Sativa), and select the extract type."},
-              {step:"3",title:"Select Heat",desc:"Choose from your custom heat profiles or drag the temp slider. The app suggests a starting temp based on your extract type."},
-              {step:"4",title:"Session Timer",desc:"Once your Peak is heated, tap Start Inhale Timer. Use +30s to extend, Pause to hold, or +18°F for a boost. End when you're done."},
-              {step:"5",title:"Rate & Review",desc:"Select how you feel (effects), then rate vapor quality, taste, potency, and overall. Add notes about flavor or experience."},
-              {step:"6",title:"Track Progress",desc:"Check the Stats tab for trends, streaks, and achievements. The Encyclopedia tab builds a personal database of every strain you've tried."},
-              {step:"7",title:"Maintain Your Peak",desc:"The Care tab tracks dabs since your last ISO soak. Log a cleaning when you do one to reset the counter."},
-            ].map(s => (
-              <div key={s.step} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-                <div style={{width:24,height:24,borderRadius:"50%",background:`${accent}20`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:accent}}>{s.step}</div>
-                <div><div style={{fontSize:12,fontWeight:500,marginBottom:3}}>{s.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{s.desc}</div></div>
-              </div>
-            ))}
-          </div>
-        )}
+        {helpOpen&&(<div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12}}>
+          {[
+            {step:"1",title:"Start a Session",desc:"Tap the fire button in the nav bar. Enter your strain, brand, and extract type."},
+            {step:"2",title:"Set Your Heat",desc:"Choose a heat profile or adjust the temp slider. The app remembers your best temp per strain."},
+            {step:"3",title:"Dab & Time It",desc:"Wait for your device to heat, then start the inhale timer. Use +30s, pause, or boost as needed."},
+            {step:"4",title:"Rate & Review",desc:"Rate vapor, taste, potency, and overall. Add flavor tags and effects for richer data."},
+            {step:"5",title:"Build Your Library",desc:"Every session builds your strain encyclopedia. Check the Stash tab for your full history."},
+            {step:"6",title:"Track Progress",desc:"Check the Stats tab for trends, streaks, and achievements. The Encyclopedia tab builds a personal database of every strain you've tried."},
+            {step:"7",title:"Keep It Clean",desc:"Use the Care tab to track cleaning cycles. Regular ISO soaks keep your device hitting like new."},
+          ].map(s=><div key={s.step} style={{display:"flex",gap:12}}><div style={{width:24,height:24,borderRadius:8,background:`${accent}15`,border:`1px solid ${accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent,fontWeight:600,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>{s.step}</div><div><div style={{fontSize:12,fontWeight:500}}>{s.title}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",lineHeight:1.4,marginTop:2}}>{s.desc}</div></div></div>)}
+        </div>)}
       </Glass>
 
       {/* ─── FAQ ─── */}
@@ -2561,92 +2197,291 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
           <ML style={{marginBottom:0}}>FAQ</ML>
           <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{faqOpen?"▾":"▸"}</span>
         </div>
-        {faqOpen && (
-          <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:14}}>
-            {[
-              {q:"Does this connect to my Peak via Bluetooth?",a:"No. This is a manual logging companion app. You enter your session details yourself — the app doesn't communicate with your device."},
-              {q:"Which Puffco devices does this support?",a:"All of them — Peak, Peak Pro, Pivot, Proxy, and any future devices. Since it's manual logging, it works with any device."},
-              {q:"Where is my data stored?",a:"All data is stored locally on your device in persistent storage. Nothing is sent to any server. Your sessions, profile, and settings stay private."},
-              {q:"Can I transfer my data to a new device?",a:"Yes — use the Export button in your Profile to download a backup file, then use Import on your new device to restore it."},
-              {q:"What are XP and levels?",a:"You earn XP for logging sessions, rating 5 stars, adding effects, writing notes, uploading photos, and trying new strains. XP levels up your rank from Newbie to Dab God."},
-              {q:"How does the cleaning tracker work?",a:"It counts sessions since your last ISO soak. At 30 sessions it turns red to remind you. Tap 'Log ISO Soak' in the Care tab to reset."},
-              {q:"Can I edit a session after saving?",a:"Not yet — but you can delete it and re-log it. Session editing is on the roadmap."},
-              {q:"What's the Strain Encyclopedia?",a:"It automatically builds a personal database from your logged sessions. Each strain shows averaged ratings, effects, and all sessions. Access it from the link in the Stash tab header."},
-            ].map((item, i) => (
-              <div key={i}>
-                <div style={{fontSize:12,fontWeight:500,marginBottom:4,color:"rgba(255,255,255,0.8)"}}>{item.q}</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{item.a}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        {faqOpen&&(<div style={{marginTop:14,display:"flex",flexDirection:"column",gap:14}}>
+          {[
+            {q:"Does this connect to my Puffco via Bluetooth?",a:"No — this is a manual logging companion. You control what gets tracked. No Bluetooth, no data collection."},
+            {q:"Where is my data stored?",a:"Everything is stored locally on your device. Nothing is sent to a server. Export your data regularly from the Profile tab as a backup."},
+            {q:"Can I use this on multiple devices?",a:"Currently data lives on one device. Use Export/Import in Profile to transfer between devices."},
+            {q:"What's the Strain Encyclopedia?",a:"It automatically builds a personal database from your logged sessions. Each strain shows averaged ratings, effects, and all sessions. Access it from the link in the Stash tab header."},
+            {q:"How do achievements work?",a:"Achievements unlock automatically as you hit milestones. Check the Stats tab to see all available achievements and your progress."},
+            {q:"What's the XP system?",a:"You earn XP for every session: 50 base + bonuses for 5-star ratings, photos, notes, effects, and new strains. Level up to unlock profile frames."},
+            {q:"How should I clean my Peak?",a:"Follow the guide above. Generally: ISO soak the chamber every 25-30 dabs, Q-tip after every few sessions, and never submerge the base."},
+            {q:"Can I suggest features?",a:"Yes! Use the Submit Feedback form below to send feature ideas, bug reports, or other feedback."},
+          ].map((f,i)=><div key={i}><div style={{fontSize:12,fontWeight:500,marginBottom:4}}>{f.q}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",lineHeight:1.5}}>{f.a}</div></div>)}
+        </div>)}
       </Glass>
 
       {/* ─── TICKET SUBMISSION ─── */}
       <Glass style={{marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",marginBottom:ticketOpen?14:0}} onClick={()=>setTicketOpen(!ticketOpen)}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <ML style={{marginBottom:0}}>Submit Feedback</ML>
-          <span style={{color:"rgba(255,255,255,0.3)",fontSize:12}}>{ticketOpen?"▾":"▸"}</span>
+          {ticketSent&&<span style={{fontSize:8,color:"#4ade80",fontFamily:"'JetBrains Mono',monospace"}}>Sent!</span>}
         </div>
-        {ticketOpen && (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div>
-            {ticketSent ? (
-              <div style={{textAlign:"center",padding:"20px 0"}}>
-                <div style={{fontSize:28,marginBottom:8}}>✓</div>
-                <div style={{fontSize:12,fontWeight:500,color:accent}}>Submitted — thank you!</div>
-                <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginTop:4}}>Your feedback has been saved.</div>
-              </div>
-            ) : (
-              <>
-                <ML>Type</ML>
-                <div style={{display:"flex",gap:8,marginBottom:14}}>
-                  {[{id:"bug",label:"🐛 Report",icon:"🐛"},{id:"idea",label:"Feature 💡",icon:"💡"},{id:"other",label:"Other",icon:"Other"}].map(t => (
-                    <button key={t.id} onClick={()=>setTicketType(t.id)} style={{
-                      flex:1, padding:"10px 8px", borderRadius:10, cursor:"pointer",
-                      background: ticketType===t.id ? `${accent}15` : "rgba(255,255,255,0.03)",
-                      border: `1px solid ${ticketType===t.id ? accent+"40" : "rgba(255,255,255,0.06)"}`,
-                      color: ticketType===t.id ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.4)",
-                      display:"flex", flexDirection:"column", alignItems:"center", gap:4,
-                      fontSize:9, letterSpacing:1, textTransform:"uppercase",
-                      fontFamily:"'JetBrains Mono',monospace", WebkitTapHighlightColor:"transparent",
-                    }}>
-                      <span style={{fontSize:16}}>{t.icon}</span>{t.label}
-                    </button>
-                  ))}
-                </div>
-                <ML>Description</ML>
-                <Input rows={4} value={ticketText} onChange={e=>setTicketText(e.target.value)} placeholder={ticketType==="bug"?"Describe the issue — what happened, what you expected...":ticketType==="idea"?"Describe your feature idea...":"What's on your mind?"} />
-                <div style={{marginTop:12}}>
-                  <Btn accent={accent} disabled={!ticketText.trim()} onClick={submitTicket}>Submit</Btn>
-                </div>
-              </>
-            )}
+            <ML>Type</ML>
+            <div style={{display:"flex",gap:6}}>
+              {[{id:"bug",label:"🐛"},{id:"idea",label:"💡"},{id:"other",label:"💬"}].map(t=>(
+                <button key={t.id} onClick={()=>setTicketType(t.id)} style={{flex:1,padding:"8px 0",borderRadius:10,fontSize:14,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:ticketType===t.id?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${ticketType===t.id?accent+"40":"rgba(255,255,255,0.06)"}`,color:ticketType===t.id?accent:"rgba(255,255,255,0.35)"}}>{t.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <ML>Description</ML>
+            <Input rows={3} value={ticketText} onChange={e=>setTicketText(e.target.value)} placeholder="Describe the bug, idea, or feedback..." />
+          </div>
+          <Btn accent={accent} onClick={async()=>{
+            if(!ticketText.trim())return;
+            const ticket={id:Date.now(),type:ticketType,text:ticketText.trim(),date:new Date().toISOString().split("T")[0],status:"open"};
+            const updated=[ticket,...tickets];setTickets(updated);await storageSet("puffco-tickets",updated);
+            setTicketText("");setTicketSent(true);setTimeout(()=>setTicketSent(false),3000);haptic.success();
+          }}>Submit</Btn>
+        </div>
+      </Glass>
+    </div>
+  );
+}
 
-            {/* Previous tickets */}
-            {tickets.length > 0 && (
-              <div style={{marginTop:18}}>
-                <ML>Your Submissions</ML>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {tickets.slice(0, 5).map(t => (
-                    <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
-                        <span style={{fontSize:14}}>{t.type==="bug"?"🐛":t.type==="idea"?"💡":"Other"}</span>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"rgba(255,255,255,0.6)"}}>{t.text}</div>
-                          <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{t.date}</div>
-                        </div>
-                      </div>
-                      <span style={{fontSize:8,padding:"3px 8px",borderRadius:8,background:t.status==="open"?`${accent}15`:"rgba(74,222,128,0.15)",color:t.status==="open"?accent:"#4ade80",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",flexShrink:0}}>{t.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+// ═══════════════════════════════════════════════════════
+// PROFILE TAB (#9 stats summary, #18 custom profiles)
+// ═══════════════════════════════════════════════════════
+function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile,accessories,setAccessories,customRatingDims,setCustomRatingDims}) {
+  const [previewFrame, setPreviewFrame] = useState(null);
+  const accent2 = profile.accent2 || null;
+  const accentGrad = accent2 ? `linear-gradient(135deg, ${accent}, ${accent2})` : accent;
+  const [profileSub, setProfileSub] = useState("profile"); // profile, devices, appearance, achievements, settings
+  const avatarRef = useRef(null);
+  const handleAvatarUpload = async (e) => { const file = e.target.files[0]; if (!file) return; const dataUrl = await compressPhoto(file, 256); setProfile(p => ({ ...p, avatar: dataUrl })); };
+
+  const subTabs = [
+    {id:"profile",label:"Profile"},
+    {id:"devices",label:"Devices"},
+    {id:"appearance",label:"Theme"},
+    {id:"achievements",label:"Awards"},
+    {id:"settings",label:"Settings"},
+  ];
+
+  return (
+    <div>
+      <div style={{padding:"22px 0 14px"}}><h2 style={{fontSize:20,fontWeight:600}}>Profile</h2></div>
+
+      {/* Sub-navigation */}
+      <div style={{display:"flex",gap:4,marginBottom:16,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+        {subTabs.map(t=>(
+          <button key={t.id} onClick={()=>{haptic.nav();setProfileSub(t.id)}} style={{
+            padding:"7px 14px",borderRadius:12,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",
+            fontFamily:"'JetBrains Mono',monospace",fontWeight:600,flexShrink:0,WebkitTapHighlightColor:"transparent",
+            background:profileSub===t.id?accent:"rgba(255,255,255,0.03)",
+            color:profileSub===t.id?"#000":"rgba(255,255,255,0.3)",
+            border:`1px solid ${profileSub===t.id?accent:"rgba(255,255,255,0.06)"}`,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ═══ PROFILE SUB-TAB ═══ */}
+      {profileSub==="profile"&&<>
+        {/* Avatar */}
+        <input ref={avatarRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAvatarUpload} />
+        <Glass style={{textAlign:"center",marginBottom:14}}>
+          <div style={{position:"relative",width:72,height:72,margin:"0 auto 12px"}}>
+            <PfpFrame frameId={profile.frame || "none"} size={72} accent={accent} accentGrad={accentGrad} />
+            <div onClick={() => avatarRef.current?.click()} style={{width:72,height:72,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:600,cursor:"pointer",overflow:"hidden"}}>
+              {profile.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span>{profile.name ? profile.name[0].toUpperCase() : "?"}</span>}
+            </div>
+            {profile.avatar && (
+              <button onClick={(e) => {e.stopPropagation(); setProfile(p => ({...p, avatar:""}))}} style={{position:"absolute",top:-2,right:-2,width:20,height:20,borderRadius:"50%",background:"rgba(239,68,68,0.9)",border:"2px solid #04040c",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:10,color:"white",lineHeight:1}}>✕</button>
             )}
           </div>
-        )}
-      </Glass>
+          <div style={{fontSize:18,fontWeight:500,marginBottom:4}}>{profile.name||"Set Your Name"}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase"}}>{profile.device} · {stash.length} sessions</div>
+          {profile.location&&<div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>📍 {profile.location} · {profile.market==="black"?"BM":profile.market==="med"?"Med":"Rec"}</div>}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}><span style={{fontSize:14}}>{lvl.emoji}</span><span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:accent,letterSpacing:1.5}}>Lv.{lvl.level} {lvl.title}</span></div>
+          {profile.bio&&<div style={{fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic",marginTop:8,lineHeight:1.5,maxWidth:280,margin:"8px auto 0"}}>"{profile.bio}"</div>}
+          <p style={{fontSize:9,color:"rgba(255,255,255,0.15)",marginTop:8,fontFamily:"'JetBrains Mono',monospace"}}>Tap photo to change</p>
+        </Glass>
 
-      <div style={{textAlign:"center",padding:"20px 0"}}><span style={{fontSize:9,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:2}}>v{APP_VERSION}</span></div>
+        {/* About You */}
+        <Glass style={{marginBottom:14}}>
+          <ML>About You</ML>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div><ML>Name</ML><Input value={profile.name||""} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name" /></div>
+            <div><ML>Device</ML>
+              <select value={profile.device||"Peak"} onChange={e=>setProfile(p=>({...p,device:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
+                {["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><option key={d} value={d} style={{background:"#111"}}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{marginBottom:12}}><ML>Bio</ML><Input rows={2} value={profile.bio||""} onChange={e=>setProfile(p=>({...p,bio:e.target.value.slice(0,200)}))} placeholder="Tell the community about yourself..." style={{fontSize:12}} /><div style={{textAlign:"right",fontSize:7,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{(profile.bio||"").length}/200</div></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div><ML>Location</ML><Input value={profile.location||""} onChange={e=>setProfile(p=>({...p,location:e.target.value}))} placeholder="e.g. Portland, OR" /></div>
+            <div><ML>Market</ML><div style={{display:"flex",gap:6}}>{[{id:"rec",label:"Rec"},{id:"med",label:"Med"},{id:"black",label:"BM"}].map(m=>(<button key={m.id} onClick={()=>setProfile(p=>({...p,market:m.id}))} style={{flex:1,padding:"10px 0",borderRadius:10,fontSize:9,letterSpacing:1,textTransform:"uppercase",fontWeight:600,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",background:(profile.market||"rec")===m.id?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${(profile.market||"rec")===m.id?accent+"40":"rgba(255,255,255,0.06)"}`,color:(profile.market||"rec")===m.id?accent:"rgba(255,255,255,0.35)"}}>{m.label}</button>))}</div></div>
+          </div>
+        </Glass>
+
+        {/* At a Glance */}
+        {profileStats&&<Glass style={{marginBottom:14}}>
+          <ML>At a Glance</ML>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            {[{l:"Avg",v:profileStats.avgRating!=="—"?profileStats.avgRating+"★":"—"},{l:"Brands",v:profileStats.brands},{l:"Strains",v:profileStats.strains}].map((s,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:18,fontFamily:"'JetBrains Mono',monospace",fontWeight:300}}>{s.v}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{s.l}</div></div>)}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            {profileStats.favZone&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Fav Temp</div><div style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:HEAT_ZONES.find(z=>z.name===profileStats.favZone)?.hex}}/><span style={{fontSize:12,fontWeight:600}}>{profileStats.favZone}</span></div></div>}
+            {profileStats.topStrain&&<div style={{flex:1,padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>Top Strain</div><div style={{fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profileStats.topStrain}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2}}>{profileStats.topStrainCount}×</div></div>}
+          </div>
+        </Glass>}
+
+        {/* Export/Import */}
+        <Glass style={{marginBottom:14}}><ML>Data</ML><div style={{display:"flex",gap:8}}><Btn secondary style={{flex:1}} onClick={()=>{const d=JSON.stringify({stash,profile,heatProfiles,version:APP_VERSION});const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="puffco-backup.json";a.click();URL.revokeObjectURL(u)}}>Export</Btn><Btn secondary style={{flex:1}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.stash){await storageSet("puffco-stash",d.stash);setStash(d.stash)}if(d.profile){await storageSet("puffco-profile",d.profile);setProfile(d.profile)}if(d.heatProfiles){await storageSet("puffco-heat-profiles",d.heatProfiles);setHeatProfiles(d.heatProfiles)}}catch{alert("Invalid backup")}};i.click()}}>Import</Btn></div></Glass>
+      </>}
+
+      {/* ═══ DEVICES SUB-TAB ═══ */}
+      {profileSub==="devices"&&<>
+        <Glass style={{marginBottom:14}}><ML>Device</ML><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{["Peak","Peak Pro","Pivot","Proxy","Other"].map(d=><button key={d} onClick={()=>setProfile(p=>({...p,device:d}))} style={{padding:10,borderRadius:10,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:profile.device===d?accent:"rgba(255,255,255,0.03)",color:profile.device===d?"#000":"rgba(255,255,255,0.4)",border:`1px solid ${profile.device===d?accent:"rgba(255,255,255,0.06)"}`}}>{d}</button>)}</div></Glass>
+
+        <Glass style={{marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <ML style={{marginBottom:0}}>Heat Profiles</ML>
+            <button onClick={()=>setEditingProfile({isNew:true,name:"",tempF:510,time:30,color:"#6C5CE7"})} style={{background:"none",border:`1px solid ${accent}40`,borderRadius:8,padding:"4px 12px",fontSize:8,color:accent,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer",fontWeight:600}}>+ New</button>
+          </div>
+          {heatProfiles.map(p=>{const active=p.id===activeProfileId;const z=getZone(p.tempF);return(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:p.color||z.hex,boxShadow:active?`0 0 8px ${p.color||z.hex}50`:"none"}}/>
+              <div style={{flex:1}}><div style={{fontSize:12,fontWeight:active?600:400}}>{p.name}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{p.tempF}°F · {p.time}s</div></div>
+              <button onClick={()=>{setActiveProfileId(p.id);storageSet("puffco-active-profile",p.id);haptic.tap()}} style={{padding:"4px 10px",borderRadius:8,fontSize:8,letterSpacing:1,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",background:active?`${accent}15`:"transparent",border:`1px solid ${active?accent+"40":"rgba(255,255,255,0.06)"}`,color:active?accent:"rgba(255,255,255,0.3)"}}>{active?"Active":"Set"}</button>
+              {!p.isDefault&&<button onClick={e=>{e.stopPropagation();setEditingProfile({...p})}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:12}}>✎</button>}
+            </div>
+          )})}
+        </Glass>
+
+        {editingProfile&&<Glass style={{marginBottom:14}}>
+          <ML>{editingProfile.isNew?"New Profile":"Edit Profile"}</ML>
+          <div style={{marginBottom:14}}><ML>Name</ML><Input value={editingProfile.name} onChange={e=>setEditingProfile(p=>({...p,name:e.target.value}))} placeholder="Profile name..."/></div>
+          <div style={{display:"flex",gap:12,marginBottom:14}}>
+            <div style={{flex:1}}><ML>Temp °F</ML><input type="number" min={400} max={620} value={editingProfile.tempF} onChange={e=>setEditingProfile(p=>({...p,tempF:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
+            <div style={{flex:1}}><ML>Time (s)</ML><input type="number" min={10} max={300} value={editingProfile.time} onChange={e=>setEditingProfile(p=>({...p,time:Number(e.target.value)}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none"}}/></div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn accent={accent} onClick={()=>{if(!editingProfile.name.trim())return;if(editingProfile.isNew){const np={...editingProfile,id:Date.now(),isNew:undefined};const u=[...heatProfiles,np];setHeatProfiles(u);storageSet("puffco-heat-profiles",u)}else{const u=heatProfiles.map(p=>p.id===editingProfile.id?editingProfile:p);setHeatProfiles(u);storageSet("puffco-heat-profiles",u)}setEditingProfile(null);haptic.success()}} style={{flex:1}}>Save</Btn>
+            <Btn secondary onClick={()=>setEditingProfile(null)} style={{flex:1}}>Cancel</Btn>
+          </div>
+          {!editingProfile.isNew&&!editingProfile.isDefault&&<Btn secondary onClick={()=>{const u=heatProfiles.filter(p=>p.id!==editingProfile.id);setHeatProfiles(u);storageSet("puffco-heat-profiles",u);setEditingProfile(null)}} style={{marginTop:8,color:"#ef4444"}}>Delete Profile</Btn>}
+        </Glass>}
+      </>}
+
+      {/* ═══ APPEARANCE SUB-TAB ═══ */}
+      {profileSub==="appearance"&&<>
+        <Glass style={{marginBottom:14}}>
+          <ML>Theme</ML>
+          <ML style={{fontSize:7,color:"rgba(255,255,255,0.2)"}}>Solids</ML>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+            {COLORWAYS.filter(c=>c.section==="solid").map(c=><button key={c.name} onClick={()=>{setProfile(p=>({...p,accent:c.hex,accent2:null}));haptic.tap()}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5,padding:8,borderRadius:10,cursor:"pointer",background:accent===c.hex&&!accent2?"rgba(255,255,255,0.06)":"transparent",border:`1px solid ${accent===c.hex&&!accent2?"rgba(255,255,255,0.15)":"rgba(255,255,255,0.04)"}`,WebkitTapHighlightColor:"transparent"}}><div style={{width:22,height:22,borderRadius:"50%",background:c.hex,boxShadow:`0 0 8px ${c.hex}30`}}/><span style={{fontSize:6,color:"rgba(255,255,255,0.3)",letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{c.name}</span></button>)}
+          </div>
+          <ML style={{fontSize:7,color:"rgba(255,255,255,0.2)"}}>Ombré</ML>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+            {COLORWAYS.filter(c=>c.section==="ombre").map(c=><button key={c.name} onClick={()=>{setProfile(p=>({...p,accent:c.hex,accent2:c.hex2}));haptic.tap()}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5,padding:8,borderRadius:10,cursor:"pointer",background:accent===c.hex&&accent2===c.hex2?"rgba(255,255,255,0.06)":"transparent",border:`1px solid ${accent===c.hex&&accent2===c.hex2?"rgba(255,255,255,0.15)":"rgba(255,255,255,0.04)"}`,WebkitTapHighlightColor:"transparent"}}><div style={{width:22,height:22,borderRadius:"50%",background:`linear-gradient(135deg,${c.hex},${c.hex2})`,boxShadow:`0 0 8px ${c.hex}30`}}/><span style={{fontSize:6,color:"rgba(255,255,255,0.3)",letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{c.name}</span></button>)}
+          </div>
+          <ML style={{fontSize:7,color:"rgba(255,255,255,0.2)"}}>Special</ML>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+            {COLORWAYS.filter(c=>c.section==="special").map(c=><button key={c.name} onClick={()=>{setProfile(p=>({...p,accent:c.hex,accent2:c.hex2||null}));haptic.tap()}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5,padding:8,borderRadius:10,cursor:"pointer",background:accent===c.hex?"rgba(255,255,255,0.06)":"transparent",border:`1px solid ${accent===c.hex?"rgba(255,255,255,0.15)":"rgba(255,255,255,0.04)"}`,WebkitTapHighlightColor:"transparent"}}><div style={{width:22,height:22,borderRadius:"50%",background:c.hex2?`linear-gradient(135deg,${c.hex},${c.hex2})`:c.hex,boxShadow:`0 0 8px ${c.hex}30`}}/><span style={{fontSize:6,color:"rgba(255,255,255,0.3)",letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{c.name}</span></button>)}
+          </div>
+        </Glass>
+
+        <Glass style={{marginBottom:14}}>
+          <ML>Profile Frame</ML>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+            {LEVELS.map(l=>{const locked=xp<l.xp;return(
+              <button key={l.frame} onClick={()=>{if(!locked){setProfile(p=>({...p,frame:l.frame}));haptic.tap()}else{setPreviewFrame(l)}}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:8,borderRadius:10,cursor:"pointer",opacity:locked?0.35:1,background:profile.frame===l.frame?"rgba(255,255,255,0.06)":"transparent",border:`1px solid ${profile.frame===l.frame?accent+"40":"rgba(255,255,255,0.04)"}`,WebkitTapHighlightColor:"transparent"}}>
+                <div style={{position:"relative",width:32,height:32}}><PfpFrame frameId={l.frame} size={32} accent={accent} accentGrad={accentGrad}/></div>
+                <span style={{fontSize:6,color:"rgba(255,255,255,0.3)",letterSpacing:1,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Lv.{l.level}</span>
+              </button>
+            )})}
+          </div>
+        </Glass>
+
+        {previewFrame&&<div style={{position:"fixed",inset:0,zIndex:72,background:"rgba(4,4,12,0.96)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",padding:24}} onClick={()=>setPreviewFrame(null)}>
+          <button onClick={()=>setPreviewFrame(null)} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:75,WebkitTapHighlightColor:"transparent","aria-label":"Close"}}>✕</button>
+          <div style={{position:"relative",width:120,height:120,marginBottom:20}}>
+            <PfpFrame frameId={previewFrame.frame} size={120} accent={accent} accentGrad={accentGrad}/>
+            <div style={{width:120,height:120,borderRadius:"50%",background:`${accent}20`,border:`2px solid ${accent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,overflow:"hidden"}}>{profile.avatar?<img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{color:accent}}>{(profile.name||"?")[0].toUpperCase()}</span>}</div>
+          </div>
+          <div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{previewFrame.title}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace",marginBottom:16}}>Level {previewFrame.level} · {previewFrame.xp.toLocaleString()} XP</div>
+          {xp>=previewFrame.xp?<Btn accent={accent} onClick={(e)=>{e.stopPropagation();setProfile(p=>({...p,frame:previewFrame.frame}));setPreviewFrame(null);haptic.success()}} style={{maxWidth:200}}>Equip Frame</Btn>:<Btn disabled style={{maxWidth:200}}>🔒 Locked</Btn>}
+        </div>}
+      </>}
+
+      {/* ═══ ACHIEVEMENTS SUB-TAB ═══ */}
+      {profileSub==="achievements"&&<>
+        <Glass style={{marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <ML style={{marginBottom:0}}>Achievements</ML>
+            <span style={{fontSize:10,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{unlocked.length}/{ACHIEVEMENTS.length}</span>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {ACHIEVEMENTS.map(a=><AchievementBadge key={a.id} achievement={a} earned={a.check(stash)} accent={accent} />)}
+          </div>
+        </Glass>
+        {/* XP Progress */}
+        <Glass style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}>
+            <div style={{width:46,height:46,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,background:`${accent}18`,border:`1.5px solid ${accent}50`}}>{lvl.emoji}</div>
+            <div style={{flex:1}}><div style={{display:"flex",alignItems:"baseline",gap:8}}><span style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:accent}}>Level {lvl.level}</span><span style={{fontSize:16,fontWeight:500}}>{lvl.title}</span></div><div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginTop:3}}>{xp.toLocaleString()} XP</div></div>
+          </div>
+          {lvl.next&&<div><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{lvl.progressXP}/{lvl.neededXP} XP</span><span style={{fontSize:8,color:accent,fontFamily:"'JetBrains Mono',monospace"}}>Next: {lvl.next.title}</span></div><div style={{height:8,borderRadius:4,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}><div style={{height:"100%",borderRadius:4,width:`${lvl.progress*100}%`,background:accent,transition:"width 1s"}}/></div></div>}
+        </Glass>
+      </>}
+
+      {/* ═══ SETTINGS SUB-TAB ═══ */}
+      {profileSub==="settings"&&<>
+        {/* Custom Rating Dimensions */}
+        <Glass style={{marginBottom:14}}>
+          <ML>Custom Rating Dimensions</ML>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginBottom:10,lineHeight:1.4}}>Toggle extra rating categories that appear during session rating.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {customRatingDims.map(d=>(
+              <button key={d.id} onClick={()=>{const updated=customRatingDims.map(x=>x.id===d.id?{...x,enabled:!x.enabled}:x);setCustomRatingDims(updated);storageSet("puffco-custom-ratings",updated);haptic.tap()}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:d.enabled?`${accent}10`:"rgba(255,255,255,0.02)",border:`1px solid ${d.enabled?accent+"30":"rgba(255,255,255,0.06)"}`}}>
+                <span style={{fontSize:12,color:d.enabled?"white":"rgba(255,255,255,0.35)"}}>{d.label}</span>
+                <div style={{width:36,height:20,borderRadius:10,background:d.enabled?accent:"rgba(255,255,255,0.1)",transition:"background 0.2s",position:"relative"}}><div style={{width:16,height:16,borderRadius:"50%",background:"white",position:"absolute",top:2,left:d.enabled?18:2,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/></div>
+              </button>
+            ))}
+          </div>
+        </Glass>
+
+        {/* Accessories */}
+        <Glass style={{marginBottom:14}}>
+          <ML>Accessories</ML>
+          {accessories.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+            {accessories.map((a,i)=>(
+              <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+                {a.photo&&<div style={{width:36,height:36,borderRadius:8,overflow:"hidden",flexShrink:0}}><img src={a.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500}}>{a.name}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{a.type}{a.brand?" · "+a.brand:""}</div></div>
+                <button onClick={()=>{const updated=accessories.filter((_,j)=>j!==i);setAccessories(updated);storageSet("puffco-accessories",updated)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",cursor:"pointer",fontSize:12}}>✕</button>
+              </div>
+            ))}
+          </div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <Input value={profile._accName||""} onChange={e=>setProfile(p=>({...p,_accName:e.target.value}))} placeholder="Name" />
+            <select value={profile._accType||"Glass"} onChange={e=>setProfile(p=>({...p,_accType:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 14px",fontSize:13,color:"white",outline:"none",appearance:"none",fontFamily:"'Syne',sans-serif"}}>
+              {["Glass","Cap","Tether","Chamber","Atomizer","Ball Cap","Oculus","Travel Pack","Other"].map(t=><option key={t} value={t} style={{background:"#111"}}>{t}</option>)}
+            </select>
+          </div>
+          <Input value={profile._accBrand||""} onChange={e=>setProfile(p=>({...p,_accBrand:e.target.value}))} placeholder="Brand (optional)" style={{marginBottom:8}} />
+          <Btn secondary small onClick={()=>{if(!(profile._accName||"").trim())return;const acc={id:Date.now(),name:profile._accName.trim(),type:profile._accType||"Glass",brand:profile._accBrand||""};const updated=[...accessories,acc];setAccessories(updated);storageSet("puffco-accessories",updated);setProfile(p=>({...p,_accName:"",_accBrand:""}));haptic.success()}}>+ Add Accessory</Btn>
+        </Glass>
+
+        {/* Storage Warning */}
+        {typeof localStorage!=="undefined"&&getStorageUsage()>STORAGE_WARN_BYTES&&(
+          <Glass style={{marginBottom:14,border:"1px solid rgba(250,204,21,0.2)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>⚠️</span>
+              <div><div style={{fontSize:11,fontWeight:600,color:"#facc15"}}>Storage Almost Full</div><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",lineHeight:1.4,marginTop:2}}>You're using {(getStorageUsage()/1000000).toFixed(1)}MB. Export a backup and consider removing old photos.</div></div>
+            </div>
+          </Glass>
+        )}
+      </>}
+
+      {/* Changelog Modal */}
+      {/* (Changelog is triggered from the header, not from profile sub-nav) */}
     </div>
   );
 }
