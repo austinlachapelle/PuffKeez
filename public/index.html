@@ -270,10 +270,33 @@ const cloudSync = {
     const sb = getSupabase();
     if (!sb || !userId) return null;
     try {
-      const post = {id:Date.now(),user_id:userId,session_id:session.id,user_name:profile.name||"Anon",user_avatar:profile.avatar||"",user_frame:profile.frame||"none",user_accent:profile.accent||"#6C5CE7",brand:session.brand,strain:session.strain,classification:session.classification,type:session.type,photo:session.photo||"",final_temp_f:session.finalTempF,heat_profile_name:session.heatProfileName||"",vapor:session.vapor||0,taste:session.taste||0,potency:session.potency||0,rating:session.rating||0,notes:session.notes||"",effects:session.effects||[],flavors:session.flavors||[],caption:caption||""};
-      const {error} = await sb.from("community_posts").insert(post);
-      if (error) throw error;
-      return post;
+      const post = {
+        id: Date.now(),
+        user_id: userId,
+        session_id: session.id || 0,
+        user_name: profile.name || "Anon",
+        user_avatar: profile.avatar || "",
+        user_frame: profile.frame || "none",
+        user_accent: profile.accent || "#6C5CE7",
+        brand: session.brand || "",
+        strain: session.strain || "",
+        classification: session.classification || "",
+        type: session.type || "",
+        photo: session.photo || "",
+        final_temp_f: session.finalTempF || 0,
+        heat_profile_name: session.heatProfileName || "",
+        vapor: session.vapor || 0,
+        taste: session.taste || 0,
+        potency: session.potency || 0,
+        rating: session.rating || 0,
+        notes: session.notes || "",
+        effects: session.effects || [],
+        flavors: session.flavors || [],
+        caption: caption || "",
+      };
+      const {data, error} = await sb.from("community_posts").insert(post).select();
+      if (error) { console.error("Share insert error:", error); return null; }
+      return data?.[0] || post;
     } catch(e) { console.error("Share error:", e); return null; }
   },
   async getFeed(limit=30, offset=0) {
@@ -2377,10 +2400,13 @@ function CommunityFeedInline({accent, authUser, profile, stash, lvl, onShowAuth}
     if(authUser && profile) cloudSync.updatePublicProfile(authUser.id, profile, stash, lvl);
   },[authUser]);
 
+  const [shareError, setShareError] = useState("");
   const handleShare = async () => {
     if(!authUser || !shareSession) return;
     setShareLoading(true);
-    await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    setShareError("");
+    const result = await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    if(!result) { setShareError("Failed to post"); setShareLoading(false); return; }
     setShareSession(null);
     setShareCaption("");
     setShareLoading(false);
@@ -2419,6 +2445,7 @@ function CommunityFeedInline({accent, authUser, profile, stash, lvl, onShowAuth}
             ))}
           </div>
           <Input value={shareCaption} onChange={e=>setShareCaption(e.target.value)} placeholder="Add a caption..." style={{marginBottom:8,fontSize:11}} />
+          {shareError&&<div style={{fontSize:9,color:"#ef4444",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>{shareError}</div>}
           <Btn accent={accent} onClick={handleShare} disabled={shareLoading} small>{shareLoading?"Posting...":"Share to Feed"}</Btn>
         </Glass>
       )}
@@ -2863,7 +2890,8 @@ function CommunityTab({accent, authUser, profile, stash, lvl, onShowAuth}) {
   const handleShare = async () => {
     if(!authUser || !shareSession) return;
     setShareLoading(true);
-    await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    const result = await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    if(!result) { setShareLoading(false); return; }
     setShareSession(null);
     setShareCaption("");
     setShareLoading(false);
