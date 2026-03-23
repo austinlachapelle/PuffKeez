@@ -35,13 +35,19 @@ const APP_VERSION = "3.5.0";
 // SUPABASE AUTH CONFIG
 // ═══════════════════════════════════════════════════════
 const SUPABASE_URL = "https://mdclubzkylzlkpmgbukw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_dVtjFJI25cJPdxZviOlZ_g_enp11siW";
-let supabase = null;
-try {
-  if (typeof window !== "undefined" && window.supabase) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-} catch(e) { console.warn("Supabase not loaded:", e); }
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kY2x1YnpreWx6bGtwbWdidWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxMzk1NjQsImV4cCI6MjA4OTcxNTU2NH0._xNp34pZK2Q9yFyBTgnuFZUP7eD8_uq4qKVPPVsR-e8";
+let _supabaseClient = null;
+function getSupabase() {
+  if (_supabaseClient) return _supabaseClient;
+  try {
+    // Try window.supabase (CDN UMD global)
+    if (typeof window !== "undefined" && window.supabase && window.supabase.createClient) {
+      _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      return _supabaseClient;
+    }
+  } catch(e) { console.warn("Supabase init error:", e); }
+  return null;
+}
 function ls(key, fb) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
 function lsSet(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
@@ -715,14 +721,14 @@ function AuthModal({ accent, onClose, onAuth }) {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!supabase) { setError("Auth service not available"); return; }
+    if (!getSupabase()) { setError("Auth service not available"); return; }
     if (!email.trim() || !password.trim()) { setError("Please fill in all fields"); return; }
     if (mode === "signup" && password.length < 6) { setError("Password must be at least 6 characters"); return; }
     setLoading(true); setError("");
     try {
       const { data, error: authErr } = mode === "signup"
-        ? await supabase.auth.signUp({ email: email.trim(), password })
-        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        ? await getSupabase().auth.signUp({ email: email.trim(), password })
+        : await getSupabase().auth.signInWithPassword({ email: email.trim(), password });
       if (authErr) throw authErr;
       if (data?.user) { onAuth(data.user, data.session); }
       if (mode === "signup" && !authErr) { setError("Check your email to confirm your account!"); setLoading(false); return; }
@@ -774,10 +780,11 @@ function PuffcoCompanion() {
 
   // Check for existing session on mount
   useEffect(() => {
-    if (!supabase) { setAuthLoading(false); setIsGuest(true); return; }
+    const sb = getSupabase();
+    if (!sb) { setAuthLoading(false); setIsGuest(true); return; }
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await sb.auth.getSession();
         if (session?.user) { setAuthUser(session.user); }
         else { setIsGuest(true); }
       } catch { setIsGuest(true); }
@@ -785,8 +792,8 @@ function PuffcoCompanion() {
     };
     checkSession();
 
-    // Listen for auth state changes (handles OAuth redirect)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    // Listen for auth state changes
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user) {
         setAuthUser(session.user);
         setIsGuest(false);
@@ -807,7 +814,7 @@ function PuffcoCompanion() {
   };
 
   const handleLogout = async () => {
-    if (supabase) { await supabase.auth.signOut(); }
+    if (getSupabase()) { await getSupabase().auth.signOut(); }
     setAuthUser(null);
     setIsGuest(true);
   };
