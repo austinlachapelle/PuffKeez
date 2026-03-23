@@ -15,7 +15,6 @@
 </head>
 <body>
   <div id="root"></div>
-  <!-- Supabase JS Client via jsdelivr (the CORRECT CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -41,7 +40,6 @@ let _supabaseClient = null;
 function getSupabase() {
   if (_supabaseClient) return _supabaseClient;
   try {
-    // Try window.supabase (CDN UMD global)
     if (typeof window !== "undefined" && window.supabase && window.supabase.createClient) {
       _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       return _supabaseClient;
@@ -49,23 +47,235 @@ function getSupabase() {
   } catch(e) { console.warn("Supabase init error:", e); }
   return null;
 }
+
+// ─── Local Storage helpers (always available) ──────────
 function ls(key, fb) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
 function lsSet(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
-// ─── Persistent Storage (localStorage) ──────────
+// ─── Persistent Storage (localStorage, used for guest + cache) ──────────
 async function storageGet(key, fb) {
   try {
     const raw = localStorage.getItem(key);
     return raw !== null ? JSON.parse(raw) : fb;
-  } catch {
-    return fb;
-  }
+  } catch { return fb; }
 }
 async function storageSet(key, v) {
-  try {
-    localStorage.setItem(key, JSON.stringify(v));
-  } catch {}
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
 }
+
+// ═══════════════════════════════════════════════════════
+// SUPABASE CLOUD SYNC LAYER
+// ═══════════════════════════════════════════════════════
+// Converts between app's camelCase and DB's snake_case
+function sessionToRow(s, userId) {
+  return {
+    id: s.id, user_id: userId, brand: s.brand||"", strain: s.strain||"", classification: s.classification||"",
+    type: s.type||"", photo: s.photo||"", spotify_url: s.spotifyUrl||"", is_globbing: s.isGlobbing||false,
+    brand2: s.brand2||"", strain2: s.strain2||"", type2: s.type2||"",
+    final_temp_f: s.finalTempF||0, heat_profile_name: s.heatProfileName||"", reheats: s.reheats||0,
+    duration: s.duration||0, best_temp: s.bestTemp||"", vapor: s.vapor||0, taste: s.taste||0,
+    potency: s.potency||0, rating: s.rating||0, notes: s.notes||"",
+    effects: s.effects||[], flavors: s.flavors||[], custom_ratings: s.customRatings||{},
+    date: s.date||"", time_of_day: s.timeOfDay||"",
+  };
+}
+function rowToSession(r) {
+  return {
+    id: r.id, brand: r.brand, strain: r.strain, classification: r.classification,
+    type: r.type, photo: r.photo, spotifyUrl: r.spotify_url, isGlobbing: r.is_globbing,
+    brand2: r.brand2, strain2: r.strain2, type2: r.type2,
+    finalTempF: r.final_temp_f, heatProfileName: r.heat_profile_name, reheats: r.reheats,
+    duration: r.duration, bestTemp: r.best_temp, vapor: r.vapor, taste: r.taste,
+    potency: r.potency, rating: r.rating, notes: r.notes,
+    effects: r.effects||[], flavors: r.flavors||[], customRatings: r.custom_ratings||{},
+    date: r.date, timeOfDay: r.time_of_day,
+  };
+}
+function profileToRow(p, userId) {
+  return {
+    id: userId, name: p.name||"", device: p.device||"Peak", accent: p.accent||"#6C5CE7",
+    accent2: p.accent2||null, bio: p.bio||"", location: p.location||"", market: p.market||"rec",
+    avatar: p.avatar||"", frame: p.frame||"none", dabs_since_clean: p.dabsSinceClean||0,
+    clean_history: p.cleanHistory||[], clean_threshold: p.cleanThreshold||30,
+  };
+}
+function rowToProfile(r) {
+  return {
+    name: r.name, device: r.device, accent: r.accent, accent2: r.accent2,
+    bio: r.bio, location: r.location, market: r.market, avatar: r.avatar, frame: r.frame,
+    dabsSinceClean: r.dabs_since_clean, cleanHistory: r.clean_history||[], cleanThreshold: r.clean_threshold||30,
+  };
+}
+
+// Cloud sync functions — called by the app when user is authenticated
+const cloudSync = {
+  // Load ALL user data from Supabase
+  async loadAll(userId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return null;
+    try {
+      const [sessRes, profRes, hpRes, accRes, crRes, foldRes, tickRes] = await Promise.all([
+        sb.from("sessions").select("*").eq("user_id", userId).order("id", {ascending:false}),
+        sb.from("user_profiles").select("*").eq("id", userId).single(),
+        sb.from("heat_profiles").select("*").eq("user_id", userId).order("id"),
+        sb.from("accessories").select("*").eq("user_id", userId).order("id"),
+        sb.from("custom_ratings").select("*").eq("user_id", userId),
+        sb.from("folders").select("*").eq("user_id", userId).order("id"),
+        sb.from("tickets").select("*").eq("user_id", userId).order("id", {ascending:false}),
+      ]);
+      return {
+        stash: (sessRes.data||[]).map(rowToSession),
+        profile: profRes.data ? rowToProfile(profRes.data) : null,
+        heatProfiles: (hpRes.data||[]).map(r=>({id:r.id,name:r.name,tempF:r.temp_f,time:r.time,color:r.color,isDefault:r.is_default})),
+        accessories: (accRes.data||[]).map(r=>({id:r.id,name:r.name,type:r.type,brand:r.brand,photo:r.photo})),
+        customRatings: (crRes.data||[]).map(r=>({id:r.id,label:r.label,enabled:r.enabled})),
+        folders: (foldRes.data||[]).map(r=>({id:r.id,name:r.name,strains:r.strains||[]})),
+        tickets: (tickRes.data||[]).map(r=>({id:r.id,type:r.type,text:r.text,date:r.date,status:r.status})),
+      };
+    } catch(e) { console.error("Cloud load error:", e); return null; }
+  },
+
+  // Migrate localStorage data to Supabase (first login)
+  async migrateLocal(userId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      const localStash = ls("puffco-stash", []);
+      const localProfile = ls("puffco-profile", null);
+      const localHP = ls("puffco-heat-profiles", []);
+      const localAcc = ls("puffco-accessories", []);
+      const localCR = ls("puffco-custom-ratings", []);
+      const localFolders = ls("puffco-folders", []);
+      const localTickets = ls("puffco-tickets", []);
+
+      // Upsert profile
+      if (localProfile) {
+        await sb.from("user_profiles").upsert(profileToRow(localProfile, userId));
+      }
+      // Insert sessions (ignore conflicts for already-synced ones)
+      if (localStash.length > 0) {
+        const rows = localStash.map(s => sessionToRow(s, userId));
+        // Batch in chunks of 50
+        for (let i = 0; i < rows.length; i += 50) {
+          await sb.from("sessions").upsert(rows.slice(i, i + 50), {onConflict:"id"});
+        }
+      }
+      // Heat profiles
+      if (localHP.length > 0) {
+        const rows = localHP.map(p => ({id:p.id,user_id:userId,name:p.name,temp_f:p.tempF,time:p.time,color:p.color,is_default:p.isDefault||false}));
+        await sb.from("heat_profiles").upsert(rows, {onConflict:"id"});
+      }
+      // Accessories
+      if (localAcc.length > 0) {
+        const rows = localAcc.map(a => ({id:a.id,user_id:userId,name:a.name,type:a.type,brand:a.brand||"",photo:a.photo||""}));
+        await sb.from("accessories").upsert(rows, {onConflict:"id"});
+      }
+      // Custom ratings
+      if (localCR.length > 0) {
+        const rows = localCR.map(c => ({id:c.id,user_id:userId,label:c.label,enabled:c.enabled}));
+        await sb.from("custom_ratings").upsert(rows, {onConflict:"user_id,id"});
+      }
+      // Folders
+      if (localFolders.length > 0) {
+        const rows = localFolders.map(f => ({id:f.id,user_id:userId,name:f.name,strains:f.strains||[]}));
+        await sb.from("folders").upsert(rows, {onConflict:"id"});
+      }
+      // Tickets
+      if (localTickets.length > 0) {
+        const rows = localTickets.map(t => ({id:t.id,user_id:userId,type:t.type,text:t.text,date:t.date,status:t.status||"open"}));
+        await sb.from("tickets").upsert(rows, {onConflict:"id"});
+      }
+      console.log("Migration complete");
+    } catch(e) { console.error("Migration error:", e); }
+  },
+
+  // Save profile
+  async saveProfile(userId, profile) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("user_profiles").upsert(profileToRow(profile, userId)); } catch(e) { console.error("Save profile error:", e); }
+  },
+
+  // Save a single new session
+  async saveSession(userId, session) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("sessions").upsert(sessionToRow(session, userId), {onConflict:"id"}); } catch(e) { console.error("Save session error:", e); }
+  },
+
+  // Delete a session
+  async deleteSession(userId, sessionId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("sessions").delete().eq("id", sessionId).eq("user_id", userId); } catch(e) { console.error("Delete session error:", e); }
+  },
+
+  // Update a session
+  async updateSession(userId, session) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("sessions").upsert(sessionToRow(session, userId), {onConflict:"id"}); } catch(e) { console.error("Update session error:", e); }
+  },
+
+  // Save heat profiles (full replace)
+  async saveHeatProfiles(userId, profiles) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      await sb.from("heat_profiles").delete().eq("user_id", userId);
+      if (profiles.length > 0) {
+        const rows = profiles.map(p => ({id:p.id,user_id:userId,name:p.name,temp_f:p.tempF,time:p.time,color:p.color,is_default:p.isDefault||false}));
+        await sb.from("heat_profiles").insert(rows);
+      }
+    } catch(e) { console.error("Save HP error:", e); }
+  },
+
+  // Save accessories (full replace)
+  async saveAccessories(userId, accessories) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      await sb.from("accessories").delete().eq("user_id", userId);
+      if (accessories.length > 0) {
+        const rows = accessories.map(a => ({id:a.id,user_id:userId,name:a.name,type:a.type,brand:a.brand||"",photo:a.photo||""}));
+        await sb.from("accessories").insert(rows);
+      }
+    } catch(e) { console.error("Save accessories error:", e); }
+  },
+
+  // Save custom rating dims
+  async saveCustomRatings(userId, dims) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      await sb.from("custom_ratings").delete().eq("user_id", userId);
+      if (dims.length > 0) {
+        const rows = dims.map(c => ({id:c.id,user_id:userId,label:c.label,enabled:c.enabled}));
+        await sb.from("custom_ratings").insert(rows);
+      }
+    } catch(e) { console.error("Save CR error:", e); }
+  },
+
+  // Save folders
+  async saveFolders(userId, folders) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      await sb.from("folders").delete().eq("user_id", userId);
+      if (folders.length > 0) {
+        const rows = folders.map(f => ({id:f.id,user_id:userId,name:f.name,strains:f.strains||[]}));
+        await sb.from("folders").insert(rows);
+      }
+    } catch(e) { console.error("Save folders error:", e); }
+  },
+
+  // Save a ticket
+  async saveTicket(userId, ticket) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("tickets").upsert({id:ticket.id,user_id:userId,type:ticket.type,text:ticket.text,date:ticket.date,status:ticket.status||"open"}, {onConflict:"id"}); } catch(e) { console.error("Save ticket error:", e); }
+  },
+};
 
 // ─── Data Constants ────────────────────────────────────
 const DEFAULT_PROFILES = [
@@ -895,11 +1105,12 @@ function PuffcoCompanion() {
   const scrollPositions = useRef({});
   const [vaporTrail, setVaporTrail] = useState(false);
 
-  // ─── Load all data from persistent storage on mount ───
+  // ─── Load all data — cloud if authenticated, local otherwise ───
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        // Always load local first (fast)
         const [savedStash, savedProfile, savedHP, savedActiveHP, savedOnboarded, savedCR, savedAcc] = await Promise.all([
           storageGet("puffco-stash", []),
           storageGet("puffco-profile", { name:"", device:"Peak", accent:"#6C5CE7", dabsSinceClean:0, cleanHistory:[], avatar:"", frame:"none", bio:"", location:"", market:"rec" }),
@@ -930,8 +1141,42 @@ function PuffcoCompanion() {
     // Safety net — if storage hangs, force past loading after 2s
     const safetyTimeout = setTimeout(() => { if (mounted) setLoading(false); }, 800);
     return () => { mounted = false; clearTimeout(safetyTimeout); };
+  }, []);
 
-    // ─── PWA Setup ───────────────────────────────────
+  // ─── Cloud Sync: Load from Supabase when authenticated ───
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+  useEffect(() => {
+    if (!authUser || cloudLoaded) return;
+    let cancelled = false;
+    (async () => {
+      const userId = authUser.id;
+      // Check if user has cloud data
+      const cloudData = await cloudSync.loadAll(userId);
+      if (cancelled) return;
+      if (cloudData && cloudData.stash && cloudData.stash.length > 0) {
+        // User has cloud data — use it
+        setStash(cloudData.stash);
+        if (cloudData.profile) setProfile(cloudData.profile);
+        if (cloudData.heatProfiles.length > 0) setHeatProfiles(cloudData.heatProfiles);
+        if (cloudData.accessories.length > 0) setAccessories(cloudData.accessories);
+        if (cloudData.customRatings.length > 0) setCustomRatingDims(cloudData.customRatings);
+        // Also cache to localStorage
+        storageSet("puffco-stash", cloudData.stash);
+        if (cloudData.profile) storageSet("puffco-profile", cloudData.profile);
+        if (cloudData.heatProfiles.length > 0) storageSet("puffco-heat-profiles", cloudData.heatProfiles);
+        if (cloudData.accessories.length > 0) storageSet("puffco-accessories", cloudData.accessories);
+        if (cloudData.customRatings.length > 0) storageSet("puffco-custom-ratings", cloudData.customRatings);
+      } else {
+        // No cloud data — migrate local data to cloud (first login)
+        await cloudSync.migrateLocal(userId);
+      }
+      setCloudLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [authUser, cloudLoaded]);
+
+  // ─── PWA Setup ───────────────────────────────────
+  useEffect(() => {
     // Generate a 192x192 and 512x512 icon using canvas
     function generateIcon(size) {
       const c = document.createElement("canvas");
@@ -1040,19 +1285,27 @@ function PuffcoCompanion() {
     }
   }, []);
 
-  // ─── Save to persistent storage on every change ───
+  // ─── Save to localStorage + cloud on every change ───
   const saveRef = useRef(null);
+  const prevStashRef = useRef(null);
   useEffect(() => {
     if (loading) return; // Don't save during initial load
     clearTimeout(saveRef.current);
     saveRef.current = setTimeout(() => {
+      // Always save to localStorage (cache + guest mode)
       storageSet("puffco-stash", stash);
       storageSet("puffco-profile", profile);
       storageSet("puffco-heat-profiles", heatProfiles);
       storageSet("puffco-active-profile", activeProfileId);
       storageSet("puffco-onboarded", onboarded);
-    }, 300);
-  }, [stash, profile, heatProfiles, activeProfileId, onboarded, loading]);
+      // Cloud sync for authenticated users (debounced)
+      if (authUser && cloudLoaded) {
+        const uid = authUser.id;
+        cloudSync.saveProfile(uid, profile);
+        cloudSync.saveHeatProfiles(uid, heatProfiles);
+      }
+    }, 500);
+  }, [stash, profile, heatProfiles, activeProfileId, onboarded, loading, authUser, cloudLoaded]);
 
   const accent = profile.accent || "#6C5CE7";
   const accent2 = profile.accent2 || null;
@@ -1137,13 +1390,14 @@ function PuffcoCompanion() {
   const completeSession = () => {
     const fTemp = selectedTempF + boosts*18;
     const zone = getZone(fTemp);
-    // Find matching heat profile name for the base temp
     const matchedProfile = heatProfiles.find(p => p.tempF === selectedTempF);
     const profileName = matchedProfile ? matchedProfile.name : zone.name;
     const entry = { id:Date.now(), ...sessionData, finalTempF:fTemp, heatProfileName:profileName, duration:totalDuration, bestTemp:zone.name, ...ratingData, date:new Date().toISOString().split("T")[0], timeOfDay:new Date().getHours()<12?"Morning":new Date().getHours()<17?"Afternoon":"Evening" };
     const prev=[...stash]; const updated=[entry,...stash];
     setStash(updated);
     setProfile(p=>({...p,dabsSinceClean:(p.dabsSinceClean||0)+1}));
+    // Cloud sync the new session
+    if (authUser) { cloudSync.saveSession(authUser.id, entry); }
     const prevIds=ACHIEVEMENTS.filter(a=>a.check(prev)).map(a=>a.id);
     const newIds=ACHIEVEMENTS.filter(a=>a.check(updated)).filter(a=>!prevIds.includes(a.id));
     if(newIds.length){haptic.achievement();setToast(newIds[0]);setTimeout(()=>setToast(null),3500)}
@@ -1321,13 +1575,13 @@ function PuffcoCompanion() {
           {tab==="stats"&&<StatsTab stash={stash} accent={accent} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} avg={avg} tempPredictor={tempPredictor} />}
 
           {/* ─── CARE TAB ─── */}
-          {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} />}
+          {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} authUser={authUser} />}
 
           {/* ─── PROFILE TAB (includes #9 stats summary, #18 custom profiles) ─── */}
           {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} accessories={accessories} setAccessories={setAccessories} customRatingDims={customRatingDims} setCustomRatingDims={setCustomRatingDims} authUser={authUser} isGuest={isGuest} onLogout={handleLogout} onShowAuth={()=>setShowAuthModal(true)} />}
 
           {/* ─── STRAIN ENCYCLOPEDIA (#11) ─── */}
-          {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} stash={stash} customRatingDims={customRatingDims.filter(d=>d.enabled)} />}
+          {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} stash={stash} customRatingDims={customRatingDims.filter(d=>d.enabled)} authUser={authUser} />}
 
           </div>{/* /tab-content */}
         </div>
@@ -1360,7 +1614,7 @@ function PuffcoCompanion() {
       </div>
 
       {/* Session Detail Modal */}
-      {selectedItem&&<DetailModal item={selectedItem} accent={accent} onClose={()=>setSelectedItem(null)} onDelete={id=>{setStash(p=>p.filter(s=>s.id!==id));setSelectedItem(null)}} onRepeat={item=>{setSelectedItem(null);repeatLast(item)}} onShare={item=>{setSelectedItem(null);setShareItem(item)}} onEdit={item=>{setSelectedItem(null);setEditingSession({...item})}} />}
+      {selectedItem&&<DetailModal item={selectedItem} accent={accent} onClose={()=>setSelectedItem(null)} onDelete={id=>{setStash(p=>p.filter(s=>s.id!==id));setSelectedItem(null);if(authUser)cloudSync.deleteSession(authUser.id,id)}} onRepeat={item=>{setSelectedItem(null);repeatLast(item)}} onShare={item=>{setSelectedItem(null);setShareItem(item)}} onEdit={item=>{setSelectedItem(null);setEditingSession({...item})}} />}
 
       {/* Feature #23: Shareable Card */}
       {shareItem&&<ShareCard item={shareItem} accent={accent} onClose={()=>setShareItem(null)} />}
@@ -1394,7 +1648,7 @@ function PuffcoCompanion() {
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
               {EFFECTS_LIST.map(e=>{const sel=(editingSession.effects||[]).includes(e.id);return<button key={e.id} onClick={()=>setEditingSession(p=>({...p,effects:sel?(p.effects||[]).filter(x=>x!==e.id):[...(p.effects||[]),e.id]}))} style={{padding:"4px 8px",borderRadius:8,fontSize:8,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",WebkitTapHighlightColor:"transparent",background:sel?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${sel?accent+"40":"rgba(255,255,255,0.06)"}`,color:sel?accent:"rgba(255,255,255,0.35)"}}>{e.emoji} {e.label}</button>})}
             </div>
-            <Btn accent={accent} onClick={()=>{setStash(p=>p.map(s=>s.id===editingSession.id?editingSession:s));setEditingSession(null)}}>Save Changes</Btn>
+            <Btn accent={accent} onClick={()=>{setStash(p=>p.map(s=>s.id===editingSession.id?editingSession:s));if(authUser)cloudSync.updateSession(authUser.id,editingSession);setEditingSession(null)}}>Save Changes</Btn>
             <Btn secondary onClick={()=>setEditingSession(null)} style={{marginTop:8}}>Cancel</Btn>
           </div>
         </div>
@@ -2235,7 +2489,7 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg,tempPredictor}) {
 // ═══════════════════════════════════════════════════════
 // CARE TAB
 // ═══════════════════════════════════════════════════════
-function CareTab({profile,accent,onClean,setProfile}) {
+function CareTab({profile,accent,onClean,setProfile,authUser}) {
   const threshold = profile.cleanThreshold || 30;
   const pct=Math.min(((profile.dabsSinceClean||0)/threshold)*100,100);
   let sc="#4ade80";if(pct>60)sc="#facc15";if(pct>=100)sc="#ef4444";
@@ -2370,7 +2624,7 @@ function CareTab({profile,accent,onClean,setProfile}) {
           <Btn accent={accent} onClick={async()=>{
             if(!ticketText.trim())return;
             const ticket={id:Date.now(),type:ticketType,text:ticketText.trim(),date:new Date().toISOString().split("T")[0],status:"open"};
-            const updated=[ticket,...tickets];setTickets(updated);await storageSet("puffco-tickets",updated);
+            const updated=[ticket,...tickets];setTickets(updated);await storageSet("puffco-tickets",updated);if(authUser)cloudSync.saveTicket(authUser.id,ticket);
             setTicketText("");setTicketSent(true);setTimeout(()=>setTicketSent(false),3000);haptic.success();
           }}>Submit</Btn>
         </div>
@@ -2600,7 +2854,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
           <p style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginBottom:10,lineHeight:1.4}}>Toggle extra rating categories that appear during session rating.</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {customRatingDims.map(d=>(
-              <button key={d.id} onClick={()=>{const updated=customRatingDims.map(x=>x.id===d.id?{...x,enabled:!x.enabled}:x);setCustomRatingDims(updated);storageSet("puffco-custom-ratings",updated);haptic.tap()}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:d.enabled?`${accent}10`:"rgba(255,255,255,0.02)",border:`1px solid ${d.enabled?accent+"30":"rgba(255,255,255,0.06)"}`}}>
+              <button key={d.id} onClick={()=>{const updated=customRatingDims.map(x=>x.id===d.id?{...x,enabled:!x.enabled}:x);setCustomRatingDims(updated);storageSet("puffco-custom-ratings",updated);if(authUser)cloudSync.saveCustomRatings(authUser.id,updated);haptic.tap()}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:d.enabled?`${accent}10`:"rgba(255,255,255,0.02)",border:`1px solid ${d.enabled?accent+"30":"rgba(255,255,255,0.06)"}`}}>
                 <span style={{fontSize:12,color:d.enabled?"white":"rgba(255,255,255,0.35)"}}>{d.label}</span>
                 <div style={{width:36,height:20,borderRadius:10,background:d.enabled?accent:"rgba(255,255,255,0.1)",transition:"background 0.2s",position:"relative"}}><div style={{width:16,height:16,borderRadius:"50%",background:"white",position:"absolute",top:2,left:d.enabled?18:2,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/></div>
               </button>
@@ -2616,7 +2870,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
               <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
                 {a.photo&&<div style={{width:36,height:36,borderRadius:8,overflow:"hidden",flexShrink:0}}><img src={a.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
                 <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500}}>{a.name}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{a.type}{a.brand?" · "+a.brand:""}</div></div>
-                <button onClick={()=>{const updated=accessories.filter((_,j)=>j!==i);setAccessories(updated);storageSet("puffco-accessories",updated)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",cursor:"pointer",fontSize:12}}>✕</button>
+                <button onClick={()=>{const updated=accessories.filter((_,j)=>j!==i);setAccessories(updated);storageSet("puffco-accessories",updated);if(authUser)cloudSync.saveAccessories(authUser.id,updated)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",cursor:"pointer",fontSize:12}}>✕</button>
               </div>
             ))}
           </div>}
@@ -2627,7 +2881,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
             </select>
           </div>
           <Input value={profile._accBrand||""} onChange={e=>setProfile(p=>({...p,_accBrand:e.target.value}))} placeholder="Brand (optional)" style={{marginBottom:8}} />
-          <Btn secondary small onClick={()=>{if(!(profile._accName||"").trim())return;const acc={id:Date.now(),name:profile._accName.trim(),type:profile._accType||"Glass",brand:profile._accBrand||""};const updated=[...accessories,acc];setAccessories(updated);storageSet("puffco-accessories",updated);setProfile(p=>({...p,_accName:"",_accBrand:""}));haptic.success()}}>+ Add Accessory</Btn>
+          <Btn secondary small onClick={()=>{if(!(profile._accName||"").trim())return;const acc={id:Date.now(),name:profile._accName.trim(),type:profile._accType||"Glass",brand:profile._accBrand||""};const updated=[...accessories,acc];setAccessories(updated);storageSet("puffco-accessories",updated);if(authUser)cloudSync.saveAccessories(authUser.id,updated);setProfile(p=>({...p,_accName:"",_accBrand:""}));haptic.success()}}>+ Add Accessory</Btn>
         </Glass>
 
         {/* Storage Warning */}
@@ -2650,7 +2904,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
 // ═══════════════════════════════════════════════════════
 // FEATURE #11: STRAIN ENCYCLOPEDIA
 // ═══════════════════════════════════════════════════════
-function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,setTab,stash}) {
+function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,setTab,stash,authUser}) {
   const [encSearch, setEncSearch] = useState("");
   const [encSort, setEncSort] = useState("count");
   const [folders, setFolders] = useState([]);
@@ -2659,7 +2913,7 @@ function EncyclopediaTab({strainMap,accent,strainView,setStrainView,onSelect,set
   const [showNewFolder, setShowNewFolder] = useState(false);
 
   useEffect(() => { (async () => { try { const f = await storageGet("puffco-folders", []); setFolders(f); } catch {} })(); }, []);
-  const saveFolders = async (f) => { setFolders(f); await storageSet("puffco-folders", f); };
+  const saveFolders = async (f) => { setFolders(f); await storageSet("puffco-folders", f); if(authUser)cloudSync.saveFolders(authUser.id,f); };
   const createFolder = () => { if (!newFolderName.trim()) return; saveFolders([...folders, { id: Date.now(), name: newFolderName.trim(), strains: [] }]); setNewFolderName(""); setShowNewFolder(false); };
   const deleteFolder = (id) => { saveFolders(folders.filter(f => f.id !== id)); if (activeFolder === id) setActiveFolder(null); };
   const toggleStrainInFolder = (folderId, strainKey) => { saveFolders(folders.map(f => f.id === folderId ? { ...f, strains: f.strains.includes(strainKey) ? f.strains.filter(s => s !== strainKey) : [...f.strains, strainKey] } : f)); };
