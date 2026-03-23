@@ -10,13 +10,12 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="/manifest.json" />
   <title>Puffco Companion</title>
-  <!-- Vercel Analytics -->
   <script defer src="/_vercel/insights/script.js"></script>
-  <!-- Vercel Web Analytics -->
   <script defer src="/_vercel/speed-insights/script.js"></script>
 </head>
 <body>
   <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.39.3/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -30,7 +29,19 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 // Export Shareable Card
 // ═══════════════════════════════════════════════════════
 
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.5.0";
+
+// ═══════════════════════════════════════════════════════
+// SUPABASE AUTH CONFIG
+// ═══════════════════════════════════════════════════════
+const SUPABASE_URL = "https://mdclubzkylzlkpmgbukw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_dVtjFJI25cJPdxZviOlZ_g_enp11siW";
+let supabase = null;
+try {
+  if (typeof window !== "undefined" && window.supabase) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch(e) { console.warn("Supabase not loaded:", e); }
 function ls(key, fb) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
 function lsSet(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
@@ -693,7 +704,114 @@ const STORAGE_WARN_BYTES = 3500000; // warn at ~3.5MB (localStorage limit is usu
 // ═══════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// AUTH MODAL
+// ═══════════════════════════════════════════════════════
+function AuthModal({ accent, onClose, onAuth }) {
+  const [mode, setMode] = useState("login"); // login, signup
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!supabase) { setError("Auth service not available"); return; }
+    if (!email.trim() || !password.trim()) { setError("Please fill in all fields"); return; }
+    if (mode === "signup" && password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    try {
+      const { data, error: authErr } = mode === "signup"
+        ? await supabase.auth.signUp({ email: email.trim(), password })
+        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authErr) throw authErr;
+      if (data?.user) { onAuth(data.user, data.session); }
+      if (mode === "signup" && !authErr) { setError("Check your email to confirm your account!"); setLoading(false); return; }
+    } catch (e) {
+      setError(e.message || "Authentication failed");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:90,background:"rgba(4,4,12,0.97)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{width:"100%",maxWidth:340}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:36,marginBottom:12}}>🔥</div>
+          <h2 style={{fontSize:20,fontWeight:300,letterSpacing:3,textTransform:"uppercase",color:"white"}}>{mode==="login"?"Welcome Back":"Create Account"}</h2>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:6}}>{mode==="login"?"Sign in to sync your data":"Join the Puffco Companion community"}</p>
+        </div>
+
+        {/* Email/Password */}
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+          <Input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" />
+          <Input value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" type="password" />
+        </div>
+
+        {error && <div style={{fontSize:10,color:error.includes("Check your email")?"#4ade80":"#ef4444",marginBottom:12,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}>{error}</div>}
+
+        <Btn accent="white" onClick={handleSubmit} disabled={loading} style={{marginBottom:10}}>
+          {loading?"Loading...":mode==="login"?"Sign In":"Sign Up"}
+        </Btn>
+
+        <button onClick={()=>{setMode(mode==="login"?"signup":"login");setError("")}} style={{width:"100%",background:"none",border:"none",color:accent,fontSize:10,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,padding:8}}>
+          {mode==="login"?"Don't have an account? Sign Up":"Already have an account? Sign In"}
+        </button>
+
+        {onClose && <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:"rgba(255,255,255,0.25)",fontSize:10,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginTop:8,padding:8}}>
+          Continue as Guest
+        </button>}
+      </div>
+    </div>
+  );
+}
+
 function PuffcoCompanion() {
+  // ─── Auth State ────────────────────────────────────
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    if (!supabase) { setAuthLoading(false); setIsGuest(true); return; }
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) { setAuthUser(session.user); }
+        else { setIsGuest(true); }
+      } catch { setIsGuest(true); }
+      setAuthLoading(false);
+    };
+    checkSession();
+
+    // Listen for auth state changes (handles OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        setAuthUser(session.user);
+        setIsGuest(false);
+        setShowAuthModal(false);
+      }
+      if (event === "SIGNED_OUT") {
+        setAuthUser(null);
+        setIsGuest(true);
+      }
+    });
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  const handleAuth = (user, session) => {
+    setAuthUser(user);
+    setIsGuest(false);
+    setShowAuthModal(false);
+  };
+
+  const handleLogout = async () => {
+    if (supabase) { await supabase.auth.signOut(); }
+    setAuthUser(null);
+    setIsGuest(true);
+  };
+
   // ─── Feature #1: Onboarding ────────────────────────
   const [onboarded, setOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1044,7 +1162,7 @@ function PuffcoCompanion() {
   // ═══════════════════════════════════════════════════════
   // LOADING SCREEN — wait for persistent storage
   // ═══════════════════════════════════════════════════════
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div style={{height:"100vh",background:"#04040c",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:20}}>
         <style>{`@keyframes loadPulse{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}@keyframes loadFade{from{opacity:0}to{opacity:1}}*{margin:0;padding:0;box-sizing:border-box}`}</style>
@@ -1177,6 +1295,14 @@ function PuffcoCompanion() {
           </div>
         )}
 
+        {/* Guest Sign-Up Prompt */}
+        {isGuest && !authUser && stash.length >= 5 && (
+          <div onClick={()=>setShowAuthModal(true)} style={{padding:"10px 16px",marginBottom:8,borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+            <div><div style={{fontSize:11,fontWeight:600,color:"white"}}>Save Your Data</div><div style={{fontSize:9,color:"rgba(255,255,255,0.3)",marginTop:2}}>Create an account to sync across devices</div></div>
+            <span style={{fontSize:9,color:accent,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,letterSpacing:1}}>SIGN UP</span>
+          </div>
+        )}
+
         <div ref={scrollRef} style={{flex:1}}>
           <div key={tab} className="tab-content">
 
@@ -1190,7 +1316,7 @@ function PuffcoCompanion() {
           {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} />}
 
           {/* ─── PROFILE TAB (includes #9 stats summary, #18 custom profiles) ─── */}
-          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} accessories={accessories} setAccessories={setAccessories} customRatingDims={customRatingDims} setCustomRatingDims={setCustomRatingDims} />}
+          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} accent={accent} stash={stash} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} profileStats={profileStats} heatProfiles={heatProfiles} setHeatProfiles={setHeatProfiles} activeProfileId={activeProfileId} setActiveProfileId={setActiveProfileId} editingProfile={editingProfile} setEditingProfile={setEditingProfile} accessories={accessories} setAccessories={setAccessories} customRatingDims={customRatingDims} setCustomRatingDims={setCustomRatingDims} authUser={authUser} isGuest={isGuest} onLogout={handleLogout} onShowAuth={()=>setShowAuthModal(true)} />}
 
           {/* ─── STRAIN ENCYCLOPEDIA (#11) ─── */}
           {tab==="encyclopedia"&&<EncyclopediaTab strainMap={strainMap} accent={accent} strainView={strainView} setStrainView={setStrainView} onSelect={setSelectedItem} setTab={switchTab} stash={stash} customRatingDims={customRatingDims.filter(d=>d.enabled)} />}
@@ -1265,6 +1391,9 @@ function PuffcoCompanion() {
           </div>
         </div>
       )}
+
+      {/* Auth Modal */}
+      {showAuthModal && <AuthModal accent={accent} onClose={()=>{setShowAuthModal(false);setIsGuest(true)}} onAuth={handleAuth} />}
 
       {/* Changelog Modal */}
       {changelogOpen&&(
@@ -2245,7 +2374,7 @@ function CareTab({profile,accent,onClean,setProfile}) {
 // ═══════════════════════════════════════════════════════
 // PROFILE TAB (#9 stats summary, #18 custom profiles)
 // ═══════════════════════════════════════════════════════
-function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile,accessories,setAccessories,customRatingDims,setCustomRatingDims}) {
+function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,profileStats,heatProfiles,setHeatProfiles,activeProfileId,setActiveProfileId,editingProfile,setEditingProfile,accessories,setAccessories,customRatingDims,setCustomRatingDims,authUser,isGuest,onLogout,onShowAuth}) {
   const [previewFrame, setPreviewFrame] = useState(null);
   const accent2 = profile.accent2 || null;
   const accentGrad = accent2 ? `linear-gradient(135deg, ${accent}, ${accent2})` : accent;
@@ -2332,6 +2461,30 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
 
         {/* Export/Import */}
         <Glass style={{marginBottom:14}}><ML>Data</ML><div style={{display:"flex",gap:8}}><Btn secondary style={{flex:1}} onClick={()=>{const d=JSON.stringify({stash,profile,heatProfiles,version:APP_VERSION});const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="puffco-backup.json";a.click();URL.revokeObjectURL(u)}}>Export</Btn><Btn secondary style={{flex:1}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.stash){await storageSet("puffco-stash",d.stash);setStash(d.stash)}if(d.profile){await storageSet("puffco-profile",d.profile);setProfile(d.profile)}if(d.heatProfiles){await storageSet("puffco-heat-profiles",d.heatProfiles);setHeatProfiles(d.heatProfiles)}}catch{alert("Invalid backup")}};i.click()}}>Import</Btn></div></Glass>
+
+        {/* Account */}
+        <Glass style={{marginBottom:14}}>
+          <ML>Account</ML>
+          {authUser ? (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:`${accent}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,overflow:"hidden"}}>
+                  {authUser.user_metadata?.avatar_url ? <img src={authUser.user_metadata.avatar_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <span>{(authUser.email||"?")[0].toUpperCase()}</span>}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:500}}>{authUser.user_metadata?.full_name||authUser.email}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{authUser.email}</div>
+                </div>
+              </div>
+              <Btn secondary onClick={onLogout} style={{color:"#ef4444"}}>Sign Out</Btn>
+            </div>
+          ) : (
+            <div>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.3)",lineHeight:1.5,marginBottom:12}}>Create an account to sync your data across devices and never lose your sessions.</p>
+              <Btn accent={accent} onClick={onShowAuth}>Sign In / Sign Up</Btn>
+            </div>
+          )}
+        </Glass>
       </>}
 
       {/* ═══ DEVICES SUB-TAB ═══ */}
