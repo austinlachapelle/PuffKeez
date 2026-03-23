@@ -1,25 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#04040c" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Puffco" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="manifest" href="/manifest.json" />
-  <title>Puffco Companion</title>
-  <script defer src="/_vercel/insights/script.js"></script>
-  <script defer src="/_vercel/speed-insights/script.js"></script>
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <script type="text/babel" data-type="module">
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" /><meta name="theme-color" content="#04040c" /><meta name="apple-mobile-web-app-capable" content="yes" /><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" /><meta name="apple-mobile-web-app-title" content="Puffco" /><meta name="mobile-web-app-capable" content="yes" /><link rel="manifest" href="/manifest.json" /><title>Puffco Companion</title><script defer src="/_vercel/insights/script.js"></script><script defer src="/_vercel/speed-insights/script.js"></script></head><body><div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script type="text/babel" data-type="module">
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // ═══════════════════════════════════════════════════════
@@ -274,6 +258,101 @@ const cloudSync = {
     const sb = getSupabase();
     if (!sb || !userId) return;
     try { await sb.from("tickets").upsert({id:ticket.id,user_id:userId,type:ticket.type,text:ticket.text,date:ticket.date,status:ticket.status||"open"}, {onConflict:"id"}); } catch(e) { console.error("Save ticket error:", e); }
+  },
+
+  // ─── Social APIs ───────────────────────────────────
+  async updatePublicProfile(userId, profile, stash, lvl) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("public_profiles").upsert({id:userId,name:profile.name,bio:profile.bio,avatar:profile.avatar,frame:profile.frame,accent:profile.accent,device:profile.device,location:profile.location,total_sessions:stash?.length||0,level:lvl?.level||1,level_title:lvl?.title||"Newbie"}); } catch(e) { console.error("Public profile error:", e); }
+  },
+  async shareSession(userId, session, profile, caption) {
+    const sb = getSupabase();
+    if (!sb || !userId) return null;
+    try {
+      const post = {id:Date.now(),user_id:userId,session_id:session.id,user_name:profile.name||"Anon",user_avatar:profile.avatar||"",user_frame:profile.frame||"none",user_accent:profile.accent||"#6C5CE7",brand:session.brand,strain:session.strain,classification:session.classification,type:session.type,photo:session.photo||"",final_temp_f:session.finalTempF,heat_profile_name:session.heatProfileName||"",vapor:session.vapor||0,taste:session.taste||0,potency:session.potency||0,rating:session.rating||0,notes:session.notes||"",effects:session.effects||[],flavors:session.flavors||[],caption:caption||""};
+      const {error} = await sb.from("community_posts").insert(post);
+      if (error) throw error;
+      return post;
+    } catch(e) { console.error("Share error:", e); return null; }
+  },
+  async getFeed(limit=30, offset=0) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    try {
+      const {data} = await sb.from("community_posts").select("*").order("created_at",{ascending:false}).range(offset, offset+limit-1);
+      return data||[];
+    } catch(e) { console.error("Feed error:", e); return []; }
+  },
+  async getFollowingFeed(userId, limit=30) {
+    const sb = getSupabase();
+    if (!sb || !userId) return [];
+    try {
+      const {data:follows} = await sb.from("follows").select("following_id").eq("follower_id", userId);
+      if (!follows || follows.length===0) return [];
+      const ids = follows.map(f=>f.following_id);
+      const {data} = await sb.from("community_posts").select("*").in("user_id", ids).order("created_at",{ascending:false}).limit(limit);
+      return data||[];
+    } catch(e) { console.error("Following feed error:", e); return []; }
+  },
+  async getReactions(postId) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    try { const {data}=await sb.from("reactions").select("*").eq("post_id",postId); return data||[]; } catch{ return []; }
+  },
+  async toggleReaction(postId, userId, emoji) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try {
+      const {data:existing} = await sb.from("reactions").select("id").eq("post_id",postId).eq("user_id",userId).eq("emoji",emoji);
+      if (existing && existing.length>0) { await sb.from("reactions").delete().eq("id",existing[0].id); }
+      else { await sb.from("reactions").insert({post_id:postId,user_id:userId,emoji}); }
+    } catch(e) { console.error("Reaction error:", e); }
+  },
+  async getComments(postId) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    try { const {data}=await sb.from("comments").select("*").eq("post_id",postId).order("created_at",{ascending:true}); return data||[]; } catch{ return []; }
+  },
+  async addComment(postId, userId, userName, userAvatar, text) {
+    const sb = getSupabase();
+    if (!sb || !userId) return null;
+    try { const {data}=await sb.from("comments").insert({post_id:postId,user_id:userId,user_name:userName,user_avatar:userAvatar,text}).select().single(); return data; } catch(e) { console.error("Comment error:", e); return null; }
+  },
+  async deletePost(postId, userId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return;
+    try { await sb.from("community_posts").delete().eq("id",postId).eq("user_id",userId); } catch(e) { console.error("Delete post error:", e); }
+  },
+  async follow(followerId, followingId) {
+    const sb = getSupabase();
+    if (!sb) return;
+    try { await sb.from("follows").insert({follower_id:followerId,following_id:followingId}); } catch(e) { console.error("Follow error:", e); }
+  },
+  async unfollow(followerId, followingId) {
+    const sb = getSupabase();
+    if (!sb) return;
+    try { await sb.from("follows").delete().eq("follower_id",followerId).eq("following_id",followingId); } catch(e) { console.error("Unfollow error:", e); }
+  },
+  async getFollowing(userId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return [];
+    try { const {data}=await sb.from("follows").select("following_id").eq("follower_id",userId); return (data||[]).map(f=>f.following_id); } catch{ return []; }
+  },
+  async getFollowers(userId) {
+    const sb = getSupabase();
+    if (!sb || !userId) return [];
+    try { const {data}=await sb.from("follows").select("follower_id").eq("following_id",userId); return (data||[]).map(f=>f.follower_id); } catch{ return []; }
+  },
+  async getPublicProfile(userId) {
+    const sb = getSupabase();
+    if (!sb) return null;
+    try { const {data}=await sb.from("public_profiles").select("*").eq("id",userId).single(); return data; } catch{ return null; }
+  },
+  async getUserPosts(userId) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    try { const {data}=await sb.from("community_posts").select("*").eq("user_id",userId).order("created_at",{ascending:false}).limit(20); return data||[]; } catch{ return []; }
   },
 };
 
@@ -1569,10 +1648,12 @@ function PuffcoCompanion() {
           <div key={tab} className="tab-content">
 
           {/* ─── STASH TAB ─── */}
-          {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} />}
+          {tab==="stash"&&<StashTab stash={stash} accent={accent} stashFilter={stashFilter} setStashFilter={setStashFilter} stashSearch={stashSearch} setStashSearch={setStashSearch} onSelect={setSelectedItem} onRepeat={repeatLast} strainMap={strainMap} setStrainView={setStrainView} setTab={switchTab} authUser={authUser} profile={profile} lvl={lvl} onShowAuth={()=>setShowAuthModal(true)} />}
 
           {/* ─── STATS TAB ─── */}
           {tab==="stats"&&<StatsTab stash={stash} accent={accent} lvl={lvl} xp={xp} streak={streak} unlocked={unlocked} avg={avg} tempPredictor={tempPredictor} />}
+
+          {/* ─── COMMUNITY TAB ─── */}
 
           {/* ─── CARE TAB ─── */}
           {tab==="care"&&<CareTab profile={profile} accent={accent} onClean={handleClean} setProfile={setProfile} authUser={authUser} />}
@@ -2274,8 +2355,94 @@ function FlipSessionCard({ item, accent, onSelect }) {
   );
 }
 
-function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashSearch,onSelect,onRepeat,strainMap,setStrainView,setTab}) {
-  const [viewMode, setViewMode] = useState("list"); // list or shelf
+// ─── Inline Community Feed (for Stash tab) ──────────
+function CommunityFeedInline({accent, authUser, profile, stash, lvl, onShowAuth}) {
+  const [feed, setFeed] = useState([]);
+  const [feedMode, setFeedMode] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [shareSession, setShareSession] = useState(null);
+  const [shareCaption, setShareCaption] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+
+  const loadFeed = async () => {
+    setLoading(true);
+    const data = feedMode==="following"&&authUser ? await cloudSync.getFollowingFeed(authUser.id) : await cloudSync.getFeed();
+    setFeed(data);
+    setLoading(false);
+  };
+
+  useEffect(()=>{ loadFeed(); }, [feedMode]);
+  useEffect(()=>{
+    if(authUser && profile) cloudSync.updatePublicProfile(authUser.id, profile, stash, lvl);
+  },[authUser]);
+
+  const handleShare = async () => {
+    if(!authUser || !shareSession) return;
+    setShareLoading(true);
+    await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    setShareSession(null);
+    setShareCaption("");
+    setShareLoading(false);
+    haptic.success();
+    loadFeed();
+  };
+
+  if(!authUser) return (
+    <Glass style={{textAlign:"center",padding:"30px 20px"}}>
+      <div style={{fontSize:28,marginBottom:10}}>🌿</div>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.5,marginBottom:14}}>Sign in to see the community feed, share sessions, and follow other dabbers.</p>
+      <Btn accent={accent} onClick={onShowAuth}>Sign In / Sign Up</Btn>
+    </Glass>
+  );
+
+  return (
+    <div>
+      {/* Feed controls */}
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        {[{id:"all",label:"Everyone"},{id:"following",label:"Following"}].map(m=>(
+          <button key={m.id} onClick={()=>setFeedMode(m.id)} style={{padding:"6px 14px",borderRadius:12,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,WebkitTapHighlightColor:"transparent",background:feedMode===m.id?accent:"rgba(255,255,255,0.03)",color:feedMode===m.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${feedMode===m.id?accent:"rgba(255,255,255,0.06)"}`}}>{m.label}</button>
+        ))}
+        <button onClick={()=>{if(stash.length>0)setShareSession(shareSession?null:stash[0])}} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:12,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:"none",border:`1px solid ${accent}40`,color:accent,WebkitTapHighlightColor:"transparent"}}>{shareSession?"Cancel":"+ Post"}</button>
+      </div>
+
+      {/* Share session picker */}
+      {shareSession&&(
+        <Glass style={{marginBottom:12}}>
+          <ML>Share a Session</ML>
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:8,WebkitOverflowScrolling:"touch"}}>
+            {stash.filter(s=>s.brand!=="Quick").slice(0,10).map(s=>(
+              <button key={s.id} onClick={()=>setShareSession(s)} style={{flexShrink:0,padding:"6px 10px",borderRadius:10,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:shareSession.id===s.id?`${accent}15`:"rgba(255,255,255,0.02)",border:`1px solid ${shareSession.id===s.id?accent+"40":"rgba(255,255,255,0.06)"}`,color:shareSession.id===s.id?"white":"rgba(255,255,255,0.4)"}}>
+                <div style={{fontSize:9,fontWeight:500}}>{s.strain}</div>
+                <div style={{fontSize:7,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>{s.brand}</div>
+              </button>
+            ))}
+          </div>
+          <Input value={shareCaption} onChange={e=>setShareCaption(e.target.value)} placeholder="Add a caption..." style={{marginBottom:8,fontSize:11}} />
+          <Btn accent={accent} onClick={handleShare} disabled={shareLoading} small>{shareLoading?"Posting...":"Share to Feed"}</Btn>
+        </Glass>
+      )}
+
+      {/* Feed */}
+      {loading?(
+        <div style={{textAlign:"center",padding:"30px 0"}}><div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Loading feed...</div></div>
+      ):feed.length===0?(
+        <Glass style={{textAlign:"center",padding:"30px 20px"}}>
+          <div style={{fontSize:24,opacity:0.15,marginBottom:6}}>💨</div>
+          <p style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{feedMode==="following"?"No posts from people you follow yet":"No posts yet — be the first!"}</p>
+        </Glass>
+      ):(
+        <div>{feed.map(p=><PostCard key={p.id} post={p} accent={accent} authUser={authUser} onRefresh={loadFeed} onViewProfile={setViewingProfile}/>)}</div>
+      )}
+      <Btn secondary onClick={loadFeed} small style={{marginTop:8}}>Refresh</Btn>
+
+      {viewingProfile&&<UserProfileModal userId={viewingProfile} accent={accent} authUser={authUser} onClose={()=>setViewingProfile(null)}/>}
+    </div>
+  );
+}
+
+function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashSearch,onSelect,onRepeat,strainMap,setStrainView,setTab,authUser,profile,lvl,onShowAuth}) {
+  const [viewMode, setViewMode] = useState("list"); // list, shelf, feed
   const lastSession = stash[0];
   let filtered = stash;
   if(stashFilter!=="All"){if(FILTER_MAP[stashFilter])filtered=filtered.filter(s=>FILTER_MAP[stashFilter].includes(s.type));else filtered=filtered.filter(s=>!Object.values(FILTER_MAP).flat().includes(s.type))}
@@ -2290,6 +2457,7 @@ function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashS
           <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
             <button onClick={()=>setViewMode("list")} style={{padding:"8px 12px",background:viewMode==="list"?`${accent}20`:"transparent",border:"none",color:viewMode==="list"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>☰</button>
             <button onClick={()=>setViewMode("shelf")} style={{padding:"8px 12px",background:viewMode==="shelf"?`${accent}20`:"transparent",border:"none",color:viewMode==="shelf"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>⊞</button>
+            <button onClick={()=>setViewMode("feed")} style={{padding:"8px 12px",background:viewMode==="feed"?`${accent}20`:"transparent",border:"none",color:viewMode==="feed"?accent:"rgba(255,255,255,0.25)",fontSize:16,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>👥</button>
           </div>
           {Object.keys(strainMap).length>0&&<button onClick={()=>setTab("encyclopedia")} style={{background:"none",border:"none",color:accent,fontSize:9,letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,cursor:"pointer"}}>Encyclopedia →</button>}
         </div>
@@ -2319,7 +2487,10 @@ function StashTab({stash,accent,stashFilter,setStashFilter,stashSearch,setStashS
             <Input value={stashSearch} onChange={e=>setStashSearch(e.target.value)} placeholder="Search strain or brand..." style={{paddingLeft:34}} />
             {stashSearch&&<button onClick={()=>setStashSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:14}}>✕</button>}
           </div>
-          {viewMode==="shelf"?(
+          {viewMode==="feed"?(
+            /* Community Feed View */
+            <CommunityFeedInline accent={accent} authUser={authUser} profile={profile} stash={stash} lvl={lvl} onShowAuth={onShowAuth} onViewProfile={null} />
+          ):viewMode==="shelf"?(
             /* Jar Shelf View (#25) */
             <div>
               <ML>{Object.keys(strainMap).length} Unique Strains</ML>
@@ -2482,6 +2653,286 @@ function StatsTab({stash,accent,lvl,xp,streak,unlocked,avg,tempPredictor}) {
           </>;
         })()}
       </Glass>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// COMMUNITY TAB (Social Feed)
+// ═══════════════════════════════════════════════════════
+const REACTION_EMOJIS = ["🔥","💨","🏆","🤤","👑"];
+
+function PostCard({post, accent, authUser, onRefresh, onViewProfile}) {
+  const [reactions, setReactions] = useState({});
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentText, setCommentText] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const z = getZone(post.final_temp_f||500);
+  const isOwn = authUser && post.user_id === authUser.id;
+  const timeAgo = (d) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "now"; if(s<3600)return Math.floor(s/60)+"m"; if(s<86400)return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; };
+
+  useEffect(() => {
+    (async()=>{
+      const r = await cloudSync.getReactions(post.id);
+      const grouped = {};
+      r.forEach(rx => { if(!grouped[rx.emoji])grouped[rx.emoji]={count:0,userReacted:false}; grouped[rx.emoji].count++; if(authUser&&rx.user_id===authUser.id)grouped[rx.emoji].userReacted=true; });
+      setReactions(grouped);
+    })();
+  }, [post.id]);
+
+  const handleReaction = async (emoji) => {
+    if(!authUser)return;
+    haptic.tap();
+    await cloudSync.toggleReaction(post.id, authUser.id, emoji);
+    const r = await cloudSync.getReactions(post.id);
+    const grouped = {};
+    r.forEach(rx => { if(!grouped[rx.emoji])grouped[rx.emoji]={count:0,userReacted:false}; grouped[rx.emoji].count++; if(rx.user_id===authUser.id)grouped[rx.emoji].userReacted=true; });
+    setReactions(grouped);
+  };
+
+  const loadComments = async () => {
+    setLoadingComments(true);
+    const c = await cloudSync.getComments(post.id);
+    setComments(c);
+    setLoadingComments(false);
+  };
+
+  const submitComment = async () => {
+    if(!commentText.trim()||!authUser)return;
+    const c = await cloudSync.addComment(post.id, authUser.id, authUser.user_metadata?.full_name||authUser.email?.split("@")[0]||"Anon", "", commentText.trim());
+    if(c) setComments(p=>[...p,c]);
+    setCommentText("");
+    haptic.success();
+  };
+
+  return (
+    <Glass style={{marginBottom:12,padding:0,overflow:"hidden"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px 0"}}>
+        <div onClick={()=>onViewProfile(post.user_id)} style={{width:32,height:32,borderRadius:"50%",background:`${post.user_accent||accent}20`,border:`1.5px solid ${post.user_accent||accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,cursor:"pointer",overflow:"hidden"}}>
+          {post.user_avatar?<img src={post.user_avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span>{(post.user_name||"?")[0].toUpperCase()}</span>}
+        </div>
+        <div style={{flex:1}} onClick={()=>onViewProfile(post.user_id)}>
+          <div style={{fontSize:12,fontWeight:600,cursor:"pointer"}}>{post.user_name||"Anon"}</div>
+          <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{timeAgo(post.created_at)}</div>
+        </div>
+        {isOwn&&<button onClick={async()=>{await cloudSync.deletePost(post.id,authUser.id);onRefresh()}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.15)",fontSize:12,cursor:"pointer"}}>✕</button>}
+      </div>
+
+      {/* Photo */}
+      {post.photo&&<div style={{width:"100%",height:180,overflow:"hidden",marginTop:10}}><img src={post.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
+
+      {/* Content */}
+      <div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+          <div>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>{post.brand}</div>
+            <div style={{fontSize:15,fontWeight:500,marginTop:2}}>{post.strain}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{display:"flex",gap:1}}>{[1,2,3,4,5].map(i=><Leaf key={i} size={10} filled={i<=post.rating} accent={post.user_accent||accent}/>)}</div>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginTop:4}}><div style={{width:5,height:5,borderRadius:"50%",background:z.hex}}/><span style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{post.final_temp_f}°F</span></div>
+          </div>
+        </div>
+        {post.caption&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.5,marginBottom:8}}>{post.caption}</p>}
+        {post.effects&&post.effects.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>{post.effects.slice(0,4).map(eid=>{const e=EFFECTS_LIST.find(x=>x.id===eid);return e?<span key={eid} style={{fontSize:7,padding:"3px 7px",borderRadius:8,background:`${post.user_accent||accent}12`,color:post.user_accent||accent,fontFamily:"'JetBrains Mono',monospace"}}>{e.emoji} {e.label}</span>:null})}</div>}
+
+        {/* Reactions */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:8}}>
+          {REACTION_EMOJIS.map(emoji=>{
+            const r = reactions[emoji];
+            const active = r?.userReacted;
+            return <button key={emoji} onClick={()=>handleReaction(emoji)} style={{display:"flex",alignItems:"center",gap:3,padding:"4px 8px",borderRadius:12,fontSize:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:active?`${accent}15`:"rgba(255,255,255,0.03)",border:`1px solid ${active?accent+"30":"rgba(255,255,255,0.06)"}`,color:"white"}}>{emoji}{r&&r.count>0&&<span style={{fontSize:8,color:active?accent:"rgba(255,255,255,0.3)",fontFamily:"'JetBrains Mono',monospace"}}>{r.count}</span>}</button>;
+          })}
+        </div>
+
+        {/* Comments toggle */}
+        <button onClick={()=>{if(!showComments)loadComments();setShowComments(p=>!p)}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:9,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginTop:8,padding:0}}>
+          {showComments?"Hide Comments":"Comments"+(comments.length>0?" ("+comments.length+")":"")}
+        </button>
+
+        {/* Comments section */}
+        {showComments&&(
+          <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.04)",paddingTop:10}}>
+            {loadingComments?<p style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>Loading...</p>:
+            comments.length===0?<p style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>No comments yet</p>:
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+              {comments.map(c=>(
+                <div key={c.id} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <div style={{width:20,height:20,borderRadius:"50%",background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,flexShrink:0}}>{(c.user_name||"?")[0].toUpperCase()}</div>
+                  <div><span style={{fontSize:10,fontWeight:600}}>{c.user_name||"Anon"} </span><span style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>{c.text}</span><div style={{fontSize:7,color:"rgba(255,255,255,0.15)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{timeAgo(c.created_at)}</div></div>
+                </div>
+              ))}
+            </div>}
+            {authUser&&<div style={{display:"flex",gap:6}}>
+              <Input value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Add a comment..." style={{flex:1,fontSize:11,padding:"8px 12px"}} />
+              <button onClick={submitComment} style={{padding:"8px 14px",borderRadius:10,background:accent,border:"none",color:"#000",fontSize:8,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",cursor:"pointer",letterSpacing:1,WebkitTapHighlightColor:"transparent"}}>Post</button>
+            </div>}
+          </div>
+        )}
+      </div>
+    </Glass>
+  );
+}
+
+function UserProfileModal({userId, accent, authUser, onClose}) {
+  const [prof, setProf] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      const [p, userPosts, followers, following] = await Promise.all([
+        cloudSync.getPublicProfile(userId),
+        cloudSync.getUserPosts(userId),
+        cloudSync.getFollowers(userId),
+        cloudSync.getFollowing(userId),
+      ]);
+      setProf(p);
+      setPosts(userPosts);
+      setFollowerCount(followers.length);
+      setFollowingCount(following.length);
+      if(authUser) setIsFollowing(followers.includes(authUser.id));
+      setLoading(false);
+    })();
+  },[userId]);
+
+  const toggleFollow = async () => {
+    if(!authUser) return;
+    haptic.tap();
+    if(isFollowing) { await cloudSync.unfollow(authUser.id, userId); setIsFollowing(false); setFollowerCount(p=>p-1); }
+    else { await cloudSync.follow(authUser.id, userId); setIsFollowing(true); setFollowerCount(p=>p+1); }
+  };
+
+  if(loading) return <div style={{position:"fixed",inset:0,zIndex:75,background:"rgba(4,4,12,0.98)",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>Loading...</div></div>;
+  const userAccent = prof?.accent||accent;
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:75,background:"rgba(4,4,12,0.98)",overflowY:"auto"}} onPointerDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{maxWidth:440,margin:"0 auto",padding:"max(70px, calc(env(safe-area-inset-top, 20px) + 50px)) 24px 40px"}}>
+        <button onClick={onClose} style={{position:"fixed",top:"max(16px, env(safe-area-inset-top, 16px))",right:16,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"50%",width:42,height:42,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",zIndex:76}}>✕</button>
+        
+        <Glass style={{textAlign:"center",marginBottom:14}}>
+          <div style={{width:64,height:64,borderRadius:"50%",background:`${userAccent}20`,border:`2px solid ${userAccent}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,margin:"0 auto 10px",overflow:"hidden"}}>
+            {prof?.avatar?<img src={prof.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span>{(prof?.name||"?")[0].toUpperCase()}</span>}
+          </div>
+          <div style={{fontSize:18,fontWeight:500}}>{prof?.name||"Anon"}</div>
+          {prof?.bio&&<p style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontStyle:"italic",marginTop:4,lineHeight:1.5}}>"{prof.bio}"</p>}
+          <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:12}}>
+            <div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{prof?.total_sessions||0}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Sessions</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{followerCount}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Followers</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{followingCount}</div><div style={{fontSize:7,color:"rgba(255,255,255,0.25)",letterSpacing:2,textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>Following</div></div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:10}}><span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:userAccent,letterSpacing:1.5}}>Lv.{prof?.level||1} {prof?.level_title||"Newbie"}</span></div>
+          {authUser&&userId!==authUser.id&&<Btn accent={isFollowing?null:userAccent} secondary={isFollowing} onClick={toggleFollow} style={{marginTop:12,maxWidth:200,margin:"12px auto 0"}}>{isFollowing?"Following":"Follow"}</Btn>}
+        </Glass>
+
+        {posts.length>0&&<><ML>Recent Posts</ML>{posts.map(p=><PostCard key={p.id} post={p} accent={accent} authUser={authUser} onRefresh={()=>{}} onViewProfile={()=>{}}/>)}</>}
+      </div>
+    </div>
+  );
+}
+
+function CommunityTab({accent, authUser, profile, stash, lvl, onShowAuth}) {
+  const [feed, setFeed] = useState([]);
+  const [feedMode, setFeedMode] = useState("all"); // all, following
+  const [loading, setLoading] = useState(true);
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [shareSession, setShareSession] = useState(null);
+  const [shareCaption, setShareCaption] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+
+  const loadFeed = async () => {
+    setLoading(true);
+    const data = feedMode==="following"&&authUser ? await cloudSync.getFollowingFeed(authUser.id) : await cloudSync.getFeed();
+    setFeed(data);
+    setLoading(false);
+  };
+
+  useEffect(()=>{ loadFeed(); }, [feedMode]);
+
+  // Update public profile when community tab is opened
+  useEffect(()=>{
+    if(authUser && profile) cloudSync.updatePublicProfile(authUser.id, profile, stash, lvl);
+  },[authUser]);
+
+  const handleShare = async () => {
+    if(!authUser || !shareSession) return;
+    setShareLoading(true);
+    await cloudSync.shareSession(authUser.id, shareSession, profile, shareCaption);
+    setShareSession(null);
+    setShareCaption("");
+    setShareLoading(false);
+    haptic.success();
+    loadFeed();
+  };
+
+  return (
+    <div>
+      <div style={{padding:"22px 0 14px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div><h2 style={{fontSize:20,fontWeight:600}}>Community</h2><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>See what the community is dabbing</p></div>
+      </div>
+
+      {!authUser?(
+        <Glass style={{textAlign:"center",padding:"40px 20px"}}>
+          <div style={{fontSize:32,marginBottom:12}}>🌿</div>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",lineHeight:1.6,marginBottom:16}}>Sign in to join the community, share sessions, and follow other dabbers.</p>
+          <Btn accent={accent} onClick={onShowAuth}>Sign In / Sign Up</Btn>
+        </Glass>
+      ):(
+        <>
+          {/* Feed mode toggle */}
+          <div style={{display:"flex",gap:6,marginBottom:14}}>
+            {[{id:"all",label:"Everyone"},{id:"following",label:"Following"}].map(m=>(
+              <button key={m.id} onClick={()=>setFeedMode(m.id)} style={{padding:"7px 16px",borderRadius:12,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,WebkitTapHighlightColor:"transparent",background:feedMode===m.id?accent:"rgba(255,255,255,0.03)",color:feedMode===m.id?"#000":"rgba(255,255,255,0.3)",border:`1px solid ${feedMode===m.id?accent:"rgba(255,255,255,0.06)"}`}}>{m.label}</button>
+            ))}
+            {/* Share a session button */}
+            <button onClick={()=>{if(stash.length>0)setShareSession(stash[0])}} style={{marginLeft:"auto",padding:"7px 16px",borderRadius:12,fontSize:8,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,background:"none",border:`1px solid ${accent}40`,color:accent,WebkitTapHighlightColor:"transparent"}}>+ Post</button>
+          </div>
+
+          {/* Share session picker */}
+          {shareSession&&(
+            <Glass style={{marginBottom:14}}>
+              <ML>Share a Session</ML>
+              <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,marginBottom:10}}>
+                {stash.filter(s=>s.brand!=="Quick").slice(0,10).map(s=>(
+                  <button key={s.id} onClick={()=>setShareSession(s)} style={{flexShrink:0,padding:"8px 12px",borderRadius:12,cursor:"pointer",WebkitTapHighlightColor:"transparent",background:shareSession.id===s.id?`${accent}15`:"rgba(255,255,255,0.02)",border:`1px solid ${shareSession.id===s.id?accent+"40":"rgba(255,255,255,0.06)"}`,color:shareSession.id===s.id?"white":"rgba(255,255,255,0.4)"}}>
+                    <div style={{fontSize:10,fontWeight:500}}>{s.strain}</div>
+                    <div style={{fontSize:7,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{s.brand} · {s.date}</div>
+                  </button>
+                ))}
+              </div>
+              <Input value={shareCaption} onChange={e=>setShareCaption(e.target.value)} placeholder="Add a caption..." style={{marginBottom:10}} />
+              <div style={{display:"flex",gap:8}}>
+                <Btn accent={accent} onClick={handleShare} disabled={shareLoading} style={{flex:1}}>{shareLoading?"Posting...":"Share to Feed"}</Btn>
+                <Btn secondary onClick={()=>{setShareSession(null);setShareCaption("")}} style={{flex:"0 0 80px"}}>Cancel</Btn>
+              </div>
+            </Glass>
+          )}
+
+          {/* Feed */}
+          {loading?(
+            <div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"'JetBrains Mono',monospace"}}>Loading feed...</div></div>
+          ):feed.length===0?(
+            <Glass style={{textAlign:"center",padding:"40px 20px"}}>
+              <div style={{fontSize:28,opacity:0.15,marginBottom:8}}>💨</div>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.25)",fontFamily:"'JetBrains Mono',monospace"}}>{feedMode==="following"?"No posts from people you follow yet":"No posts yet — be the first to share!"}</p>
+            </Glass>
+          ):(
+            <div>{feed.map(p=><PostCard key={p.id} post={p} accent={accent} authUser={authUser} onRefresh={loadFeed} onViewProfile={setViewingProfile}/>)}</div>
+          )}
+
+          {/* Refresh */}
+          <Btn secondary onClick={loadFeed} style={{marginTop:8}}>Refresh Feed</Btn>
+        </>
+      )}
+
+      {/* User Profile Modal */}
+      {viewingProfile&&<UserProfileModal userId={viewingProfile} accent={accent} authUser={authUser} onClose={()=>setViewingProfile(null)}/>}
     </div>
   );
 }
@@ -2846,6 +3297,7 @@ function ProfileTab({profile,setProfile,accent,stash,lvl,xp,streak,unlocked,prof
         </Glass>
       </>}
 
+
       {/* ═══ SETTINGS SUB-TAB ═══ */}
       {profileSub==="settings"&&<>
         {/* Custom Rating Dimensions */}
@@ -3202,6 +3654,4 @@ function ShareCard({item,accent,onClose}) {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(PuffcoCompanion));
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(() => {}); }
-  </script>
-</body>
-</html>
+</script></body></html>
